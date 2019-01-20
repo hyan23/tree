@@ -1,0 +1,16 @@
+; tree/kernel/graphic/graphic.ic
+; Author: hyan23
+; Date: 2016.07.24
+;
+
+%ifndef __GRAPHIC_IC_
+%define __GRAPHIC_IC_
+
+; constant
+    TREE_SCR_WIDTH           EQU         1024
+    TREE_SCR_HEIGHT          EQU         768
+
+
+
+
+%endif ; __GRAPHIC_IC_

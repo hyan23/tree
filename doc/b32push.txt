@@ -1,0 +1,5 @@
+// hyan23 编辑。
+
+push ax/bx/cx/... esp - 2
+push eax/ebx/... esp - 4
+push ds/es/gs/... esp - 4

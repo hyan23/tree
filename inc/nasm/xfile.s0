@@ -1,0 +1,58 @@
+; tree/inc/nasm/xfile.s0
+; Author: hyan23
+; Date: 2016.05.05
+;
+; [TREE]可执行文件标准头结构
+;
+; 所有运行在[TREE]体系结构下的应用程序必须首先引用此文件
+; 然后再引用其他文件和编写文本, 以生成可重定位的, 动态加载的代码。
+;
+
+%ifndef _XFILE_S0_
+%define _XFILE_S0_
+
+
+___XFILE_HEAD_:
+
+    _MAGIC          DB          'tree'          ; Magic Number
+
+    __TREE_NAME     DD          _TREE_NAME      ; 程序名称
+    __TREE_VER      DD          _TREE_VER       ; 程序版本
+    __TREE_LEN      DD          _TREE_END       ; 程序大小
+
+
+__RELOC_:                                       ; 重定位
+
+    _START          DD          TREE_START      ; 入口点偏移
+    _CODESEL        DW          0x0000          ; 链接器填写
+    _CODE           DD          section.text.start ; 代码段起始地址
+
+    _DAGASEL        DW          0x0000          ; 链接器填写
+    _DATA           DD          section.data.start ; 数据段起始地址
+    _DATA_LEN       DD          _TREE_END       ; 链接器填写
+
+
+__DYNAMIC_LINKED_LIBS:                          ; 动态链接
+
+    IPT_LIB_AT      DD          _IPT_LIB_BEGIN  ; ilt 起始地址
+    IPT_LIB_LEN DW (_IPT_LIB_END - _IPT_LIB_BEGIN) \
+        / TREE_IPT_ITEM_LEN                     ; ilt 条目数
+
+    XPT_TAB_AT      DD          _XPT_TAB_BEGIN  ; 导出表起始地址
+    XPT_TAB_LEN DW (_XPT_TAB_END - _XPT_TAB_BEGIN) \
+        / TREE_XPT_ITEM_LEN                     ; 导出项条目数
+
+    IPT_TAB_AT      DD          _IPT_TAB_BEGIN  ; 导入表起始地址
+    IPT_TAB_LEN DW (_IPT_TAB_END - _IPT_TAB_BEGIN) \
+        / TREE_IPT_ITEM_LEN                     ; 导入项条目数
+
+____XFILE_HEAD_END:
+
+                                                ; 保留
+___RESERVED TIMES (TREE_XFILE_HEAD_LEN - \
+    (____XFILE_HEAD_END - ___XFILE_HEAD_)) DB 0
+
+%else
+%error "This File Cannot Be Included More Than Once In A Single Project"
+
+%endif ; _XFILE_S0_

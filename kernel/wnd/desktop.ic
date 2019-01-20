@@ -1,0 +1,26 @@
+; tree/kernel/wnd/desktop.ic
+; Author: hyan23
+; Date: 2016.07.30
+;
+
+%ifndef _DESKTOP_IC_
+%define _DESKTOP_IC_
+
+%include "../inc/nasm/io/def0.ic"
+%include "../kernel/graphic/graphic.ic"
+
+    TREE_DESKTOP_BG_COLOR           EQU     Color_Cyan2
+    TREE_DESKTOP_BAR_HEIGHT         EQU     40
+    TREE_DESKTOP_BAR_COLOR          EQU     Color_Turquoise2
+    TREE_DESKTOP_TEXT_COLOR         EQU     Color_White
+
+    TREE_DESKTOP_CURSOR_WIDTH       EQU     16
+    TREE_DESKTOP_CURSOR_HEIGHT      EQU     16
+    TREE_DESKTOP_CURSOR_BACK_COLOR  EQU     Color_Gainsboro
+    TREE_DESKTOP_CURSOR_FORE_COLOR  EQU     Color_White
+    TREE_DESKTOP_CURSOR_CHAR_BACK   EQU     '#'
+    TREE_DESKTOP_CURSOR_CHAR_FORE   EQU     '*'
+
+
+
+%endif ; _DESKTOP_IC_

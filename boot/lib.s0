@@ -1,0 +1,76 @@
+; tree/boot/LIB.s0
+; Author: hyan23
+; Date: 2016.06.13
+;
+
+; 静态存储, 对用户程序。
+
+%include "../boot/LIB.ic"
+
+[BITS 32]
+
+
+_LIB:
+
+    proctab         DW      0                   ; 进程表
+
+    symboltab       DW      0                   ; 符号表
+
+                                                ; 调用门选择子表
+    callgatesel TIMES TREE_CALLGATE_SEL_TAB_BYTES DB 0
+
+    kerneltsssel    DW      0                   ; 内核选择子
+
+                                                ; 内核TSS
+    kerneltss   TIMES TREE_LIB_KERNEL_TSS_BYTES DB 0
+
+    kerneltcb       DW      0                   ; 内核tcb
+
+                                                ; tcb链, 头结点
+    tcb_chain_head  DW      0                   ; tcb链是一个循环链表结构
+
+    current_task    DW      0                   ; 当前任务, 缓存一个节点
+
+    task_count      DW      0                   ; 任务计数
+
+    active_count    DW      0                   ; 活动任务
+
+    tick_count      DD      1                   ; 震荡计数
+
+    time_stamp      DD      0                   ; 秒计数
+
+    current_time    DW      0                   ; 系统时间
+        DB 0
+        DB 0
+
+    current_date    DB      0                   ; 日期
+        DB 0
+        DB 0
+
+                                                ; 通用异常处理
+    LIB_STRING EXCP, 'exception occurred.\n'
+
+                                                ; 临时(单任务环境)
+    tmp_byte        DW      0
+    tmp_word        DW      0
+    tmp_dword       DD      0
+
+
+; kbd
+                                                ; 键盘数据
+    kbd_dat_sel     DW      0
+
+; mouse
+                                                ; 鼠标数据
+    mouse_dat_sel   DW      0
+
+
+                                                ; 壳的tcb
+; sh                                            ; 第三方控制壳的任务状态
+    sh_tcb_sel      DW      0
+
+                                                ; 保留
+    RESERVED        DW      0
+
+
+.PADDING TIMES (TREE_LIB_BYTES - ($ - _LIB)) DB 0

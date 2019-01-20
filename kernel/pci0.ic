@@ -1,0 +1,40 @@
+; tree/kernel/pci0.ic
+; Author: hyan23
+; Date: 2016.07.01
+;
+
+; 零级特权级代码接口
+; Privileged Code Interface 0
+
+
+%ifndef _PCI0_IC_
+%define _PCI0_IC_
+
+%include "../boot/gdt.ic"
+
+    TREE_PCI0_SEL_INSTRUCTION_CLI               EQU     0x13
+    TREE_PCI0_SEL_INSTRUCTION_STI               EQU     0x23
+    TREE_PCI0_SEL_INSTRUCTION_HLT               EQU     0x24
+    TREE_PCI0_SEL_INSTRUCTION_FIN               EQU     0x44
+    TREE_PCI0_SEL_INSTRUCTION_SLEEP             EQU     0x43
+    TREE_PCI0_SEL_INSTRUCTION_HUNG              EQU     0x45
+    TREE_PCI0_SEL_PROCEDURE_READ_LIB            EQU     0x11
+    TREE_PCI0_SEL_PROCEDURE_WRITE_LIB           EQU     0x10
+
+%macro TREE_PCI0CALL 1
+
+    pushfd
+
+    push DWORD %1                                ; TREE_PCI0_SEL
+    call PCI0CALL_SEL:0x0000
+    ;inc esp
+    ;inc esp
+    ;inc esp
+    ;inc esp
+
+    popfd
+
+%endmacro ; TREE_PCI0CALL
+
+
+%endif ; _PCI0_IC_

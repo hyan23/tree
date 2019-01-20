@@ -1,0 +1,42 @@
+; tree/inc/nasm/export.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+; 导出符号的宏
+
+%ifndef _EXPORT_IC_
+%define _EXPORT_IC_
+
+%include "../kernel/private.ic"
+
+%macro ___TREE_XPT_TAB_BEGIN_ 0
+
+    %ifndef __XPT_TAB_BEGIN
+        %define __XPT_TAB_BEGIN
+        _XPT_TAB_BEGIN:
+    %endif ; __XPT_TAB_BEGIN
+
+%endmacro ; ___TREE_XPT_TAB_BEGIN_
+
+%define ___TREE_XPT_TAB_END_ _XPT_TAB_END:
+
+
+%macro __TREE_EXPORT 3                           ; 导出符号
+
+    XPT_%1:                                      ; 导出序号
+    ._xpt_begin:
+        .EXP_NAME DB %2                          ; 符号名
+    ._xpt_name_end:                              ; 自动追加0
+        .PADDING TIMES (TREE_XPT_NAME_LEN - \
+            (._xpt_name_end - ._xpt_begin)) DB 0
+        .XPT_OFS DD %3                           ; 符号偏移
+    ._xpt_end:
+        .RESERVED TIMES (TREE_XPT_ITEM_LEN - \
+            (._xpt_end - XPT_%1)) DB 0           ; 保留
+
+%endmacro ; __TREE_EXPORT
+
+
+
+%endif ; _EXPORT_IC_

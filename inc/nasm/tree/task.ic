@@ -1,0 +1,22 @@
+; tree/inc/nasm/tree/kbd.ic
+; Author: hyan23
+; Date: 2016.05.28
+;
+
+%ifndef _TASK_IC_
+%define _TASK_IC_
+
+; ... CreateProcess0(...);
+; in: eax: sector in LBA, bool:ebx: sh-task
+; ret: eax: 1: succeeded, 0: failed, ecx(0-15): pid
+    __TREE_IMPORT @1, 'CreateProcess', CreateProcess
+
+; uint32:eax GetTickCount(void);
+    __TREE_IMPORT @0, 'GetTickCount', GetTickCount
+
+; uint32:eax GetTaskPid(void);
+    __TREE_IMPORT @2, 'GetTaskPid', GetTaskPid
+
+
+
+%endif ; _TASK_IC_

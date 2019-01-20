@@ -1,0 +1,87 @@
+; tree/boot/gdt.s0
+; Author: hyan23
+; Date: 2016.06.03
+;
+
+; 全局描述符表*8192, 位于 0x10000 - 0x20000
+
+
+%include "../boot/args.ic"
+
+[BITS 32]
+
+
+DESCRIPTORS:
+
+; 处理器强制的空描述符
+    NUL     DD  0x00000000, 0x00000000
+
+; 4GB的代码(平坦模型)
+    CODE    DD  0x0000ffff, 0x00cf9a00
+
+; 4GB的数据(平坦模型)
+    DATA    DD  0x0000ffff, 0x00cf9200
+
+; 初始栈空间(0x7c00)
+    DATA0   DD  0x7c000000, 0x00409600
+
+; 全局描述符表: 容量: 8192
+    GDT     DD  0x0000ffff, 0x00409201
+
+; 中断描述符表: 容量: 8192
+    IDT     DD  0x0000ffff, 0x00409202
+
+; 全局位图, 64kb
+    _BITS   DD  0x0000ffff, 0x00409203
+
+; 初始化的静态存储区
+    LIB  DD  0x0000ffff, 0x00409204
+
+; 字符模式显存
+    VRAMC   DD  0x8000ffff, 0x0040920b
+
+; 静态代码和数据
+    BASER   DD  0x7c0001ff, 0x00409800
+
+    BASER0  DD  0x7c0001ff, 0x00409200
+
+    MBRX    DD  0x80001000, 0x00409800
+
+    MBRX0   DD  0x80001000, 0x00409200
+
+    BASEC   DD  0x90001000, 0x00409800
+
+    BASEC0  DD  0x90001000, 0x00409200
+
+    MEMORY  DD  0xa0001000, 0x00409800
+
+    MEMORY0 DD  0xa0001000, 0x00409200
+
+    LOADER  DD  0xb0001000, 0x00409800
+
+    LOADER0 DD  0xb0001000, 0x00409200
+
+    LINKER  DD  0xc0001000, 0x00409800
+
+    LINKER0 DD  0xc0001000, 0x00409200
+
+    EXEC    DD  0xd0001000, 0x00409800
+
+    EXEC0   DD  0xd0001000, 0x00409200
+
+    EXEC1   DD  0xd0000000, 0x00409600
+
+; 界限0xffff, 16->32, 32->16位切换。
+    EXTRA   DD  0xe000ffff, 0x00409800
+
+    EXTRA0  DD  0xe0001000, 0x00409200
+
+    RESERV  DD  0xf0001000, 0x00409800
+
+    RESERV0 DD  0xf0001000, 0x00409200
+
+; 零级特权级代码, 未初始化。
+    PCI0CALL DD 0x00000000, 0x00000000
+
+
+PADDING0 TIMES (TREE_GDT_BYTES - ($ - DESCRIPTORS)) DB 0

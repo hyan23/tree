@@ -1,0 +1,35 @@
+; tree/inc/nasm/utility/linked.ic
+; Author: hyan23
+; Date: 2016.08.01
+;
+
+; utility/linked
+
+%ifndef _LINKED_IC_
+%define _LINKED_IC_
+
+; 头节点缓存节点数量
+; uint16:ax:linked LinkedCreate(void);
+    __TREE_IMPORT @linked0, 'LinkedCreate', LinkedCreate
+
+; void LinkedDestroy(ds:linked);
+    __TREE_IMPORT @linked1, 'LinkedDestroy', LinkedDestroy
+
+; bool:eax LinkedAppend(uint32:eax:dat);
+    __TREE_IMPORT @linked2, 'LinkedAppend', LinkedAppend
+
+; void LinkedRemove(uint32:eax:index)
+    __TREE_IMPORT @linked3, 'LinkedRemove', LinkedRemove
+
+; uint32:eax LinkedGetCount(ds:linked);
+    __TREE_IMPORT @linked4, 'LinkedGetCount', LinkedGetCount
+
+; uint32:eax LinkedGet(ds:linked, uint32:ecx:index);
+    __TREE_IMPORT @linked5, 'LinkedGet', LinkedGet
+
+; void LinkedSet(ds:linked, uint32:eax:_E,
+;   uint32:ecx:index);
+    __TREE_IMPORT @linked6, 'LinkedSet', LinkedSet
+
+
+%endif ; _LINKED_IC_

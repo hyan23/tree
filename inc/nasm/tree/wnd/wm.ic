@@ -1,0 +1,24 @@
+; tree/inc/nasm/tree/wnd/wm.ic
+; Author: hyan23
+; Date: 2016.08.08
+;
+
+%ifndef _WM_IC_
+%define _WM_IC_
+
+
+; Create Window, Return Drawable Texture
+; uint16:ax WMCreateWindow(ds:ebx:title, \
+;   uint16:dx:ax:size);
+    __TREE_IMPORT @0, 'WMCreateWindow', WMCreateWindow
+
+; void WMCloseWindow(void);
+    __TREE_IMPORT @1, 'WMCloseWindow', WMCloseWindow
+
+; uint32:edx:eax WMPollEvent(void);
+    __TREE_IMPORT @2, 'WMPollEvent', WMPollEvent
+
+
+
+
+%endif ; _WM_IC_

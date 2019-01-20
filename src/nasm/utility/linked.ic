@@ -1,0 +1,17 @@
+; tree/src/nasm/utility/linked.ic
+; Author: hyan23
+; Date: 2016.08.01
+;
+
+; utility/linked
+
+%ifndef _LINKED0_IC_
+%define _LINKED0_IC_
+
+    TREE_LINKED_CONTEXT_BYTES       EQU     32
+
+    TREE_LINKED_CONTEXT_DAT_OFS     EQU     0
+    TREE_LINKED_CONTEXT_NEXT_OFS    EQU     4 + TREE_LINKED_CONTEXT_DAT_OFS
+
+
+%endif ; _LINKED0_IC_

@@ -1,0 +1,43 @@
+; tree/inc/nasm/tree/agent.ic
+; Author: hyan23
+; Date: 2016.06.01
+;
+
+%ifndef _AGENT_IC_
+%define _AGENT_IC_
+
+; 例程原型参看tree/boot/abscall.ic。
+
+    __TREE_IMPORT @0, 'read_sector', read_sector
+
+    __TREE_IMPORT @1, 'read_block', read_block
+
+    __TREE_IMPORT @2, 'put_char', put_char
+
+    __TREE_IMPORT @3, 'put_str', put_str
+
+    __TREE_IMPORT @20, 'set_color', set_color
+
+    __TREE_IMPORT @21, 'clr_row', clr_row
+
+    __TREE_IMPORT @22, 'clr_scr', clr_scr
+
+    __TREE_IMPORT @23, 'goto_xy', goto_xy
+
+    __TREE_IMPORT @9, 'tree_execute', tree_execute
+
+    __TREE_IMPORT @10, 'tree_terminate', tree_terminate
+
+    __TREE_IMPORT @11, 'memcpy', memcpy
+
+    __TREE_IMPORT @24, 'ZeroMemory', ZeroMemory
+
+    __TREE_IMPORT @13, 'alloc_memory0', alloc_memory0
+
+    __TREE_IMPORT @16, 'free_memory', free_memory
+
+    __TREE_IMPORT @19, 'get_des_property', get_des_property
+
+
+
+%endif ; _AGENT_IC_

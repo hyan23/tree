@@ -1,0 +1,43 @@
+; tree/kernel/cgcall.ic
+; Author: hyan23
+; Date: 2016.07.21
+;
+
+%ifndef _CG_CALL_IC_
+%define _CG_CALL_IC_
+
+
+%macro TREE_CALLGATE_CALL 1                      ; 通过调用门调用特权例程
+                                                 ; 唯一的参数是调用门选择子
+                                                 ; 在调用门选择子表的索引。
+                                                 ; 定义在tree/kernel/gate.ic
+; 增加速度
+    push gs
+
+    pushad
+    push ds
+    TREE_LOCATE_DATA
+    mov ax, ds
+    mov gs, ax
+    mov eax, TREE_LIB_CALLGATE_SEL_OFS + 6 * %1
+    mov ebx, __callgate%1
+    mov ecx, 6                                   ; 复制选择子到本地缓存。
+    TREE_PCI0CALL TREE_PCI0_SEL_PROCEDURE_READ_LIB
+    pop ds
+    popad                                        ; 调用过程
+    call far [gs:__callgate%1]
+
+    pop gs
+
+%endmacro ; CALLGATE_CALL
+
+                                                 ; 调用门调用所需数据
+%macro TREE_CALLGATE_DATA 1
+
+    __callgate%1 DD 0
+    __callgatesel%1 DW 0
+
+%endmacro ; TREE_CALLGATE_DATA
+
+
+%endif ; _CG_CALL_IC_

@@ -1,0 +1,26 @@
+; tree/inc/nasm/tree/wnd/evtt.ic
+; Author: hyan23
+; Date: 2016.08.04
+;
+
+; [TREE]事件类别
+
+%ifndef _EVTT_IC_
+%define _EVTT_IC_
+
+
+    TREE_EVENT_NOTHING          EQU     0x0
+
+    TREE_EVENT_MSG_CLOSE        EQU     0x1000
+    TREE_EVENT_MSG_GOT_FOCUS    EQU     0x1001
+    TREE_EVENT_MSG_LOST_FOCUS   EQU     0x1002
+
+    TREE_EVENT_KEYPRESS_LEFT    EQU     0x2000
+    TREE_EVENT_KEYPRESS_MID     EQU     0x2001
+    TREE_EVENT_KEYPRESS_RIGHT   EQU     0x2002
+    TREE_EVENT_KEYPRESS_KBD     EQU     0x2003
+
+
+
+
+%endif ; _EVTT_IC_

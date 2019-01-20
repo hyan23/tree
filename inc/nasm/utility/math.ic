@@ -1,0 +1,11 @@
+; tree/inc/nasm/utility/math.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+%ifndef _MATH_IC_
+%define _MATH_IC_
+
+
+
+%endif ; _MATH_IC_

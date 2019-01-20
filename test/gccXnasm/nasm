@@ -1,0 +1,44 @@
+extern _foo
+N equ 64
+	
+	global _sayhello
+	global _start
+
+_start:
+	call _foo
+	jmp $
+	mov ebx, 0
+	mov eax, 0
+	int 0x80
+	
+_sayhello:
+	push eax	
+	push ebx
+	push ecx
+	push ds
+	
+	mov ax, 0xb800
+	mov ds, ax
+	mov ebx, 0
+	mov ecx, 2000
+	
+s0:
+	mov byte [ebx], 'j'
+	inc ebx
+	loop s0
+
+	;jmp $
+
+	;call near put_string
+
+	pop ds
+	pop ecx
+	pop ebx
+	pop eax
+	ret
+	
+%include "../inc/nasm/bio/public"
+%include "../inc/nasm/bio/basechar"
+
+DATA times N db 0
+STRING db 'hello nasm!^^', 0

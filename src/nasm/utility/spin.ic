@@ -1,0 +1,18 @@
+; tree/src/nasm/uitlity/spin.ic
+; Author: hyan23
+; Date: 2016.08.03
+;
+
+%ifndef _SPIN_IC0_
+%define _SPIN_IC0_
+
+    TREE_SPIN_CONTEXT_BYTES     EQU     12
+
+    TREE_SPIN_CONTEXT_DAT_OFS   EQU     0
+    TREE_SPIN_CONTEXT_LOCK_OFS  EQU     4 + \
+                        TREE_SPIN_CONTEXT_DAT_OFS
+
+
+
+
+%endif ; _SPIN_IC0_

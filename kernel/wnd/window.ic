@@ -1,0 +1,70 @@
+; tree/kernel/wnd/window.ic
+; Author: hyan23
+; Date: 2016.07.31
+;
+
+%ifndef _WINDOW_IC_
+%define _WINDOW_IC_
+
+%include "../kernel/wnd/desktop.ic"
+%include "../inc/nasm/io/def0.ic"
+
+; 结构。
+    TREE_WINDOW_CONTEXT_BYTES       EQU     64
+
+                                                    ; 关联进程。
+    TREE_WINDOW_CONTEXT_PID_OFS     EQU     0
+
+                                                    ; 窗口标题(sel)
+    TREE_WINDOW_CONTEXT_TITLE_OFS   EQU     2 + \
+                        TREE_WINDOW_CONTEXT_PID_OFS
+
+                                                    ; 窗口
+    TREE_WINDOW_CONTEXT_WINDOW_OFS  EQU     2 + \
+                        TREE_WINDOW_CONTEXT_TITLE_OFS
+
+                                                    ; 绘制区
+    TREE_WINDOW_CONTEXT_DRAWABLE_OFS EQU    2 + \
+                        TREE_WINDOW_CONTEXT_WINDOW_OFS
+
+                                                    ; 消息队列。
+    TREE_WINDOW_CONTEXT_MSG_OFS     EQU     2 + \
+                        TREE_WINDOW_CONTEXT_DRAWABLE_OFS
+
+                                                    ; 宽度
+    TREE_WINDOW_CONTEXT_WIDTH_OFS   EQU     2 + \
+                        TREE_WINDOW_CONTEXT_MSG_OFS
+
+                                                    ; 高度
+    TREE_WINDOW_CONTEXT_HEIGHT_OFS  EQU     4 + \
+                        TREE_WINDOW_CONTEXT_WIDTH_OFS
+
+                                                    ; 位置(x)
+    TREE_WINDOW_CONTEXT_X_OFS       EQU     4 + \
+                        TREE_WINDOW_CONTEXT_HEIGHT_OFS
+
+                                            ; 位置(y)
+    TREE_WINDOW_CONTEXT_Y_OFS       EQU     4 + \
+                        TREE_WINDOW_CONTEXT_X_OFS
+
+
+; 外观。
+    TREE_WINDOW_TITLE_BAR_HEIGHT    EQU     30
+    TREE_WINDOW_LEFT_EDGE           EQU     2
+    TREE_WINDOW_RIGHT_EDGE          EQU     2
+    TREE_WINDOW_TOP_EDGE            EQU     0
+    TREE_WINDOW_BOTTOM_EDGE         EQU     2
+    TREE_WINDOW_ICON_WIDTH          EQU     TREE_WINDOW_TITLE_BAR_HEIGHT - \
+                                        TREE_WINDOW_TITLE_BAR_HEIGHT / 5
+    TREE_WINDOW_ICON_HEIGHT         EQU     TREE_WINDOW_ICON_WIDTH
+    TREE_WINDOW_TITLE_BAR_COLOR     EQU     Color_WhiteSmoke
+    TREE_WINDOW_TITLE_BAR_COLOR_FOCUSED EQU TREE_DESKTOP_BAR_COLOR
+    TREE_WINDOW_TITLE_BAR_TEXT_COLOR    EQU Color_White
+    TREE_WINDOW_ICON_BG_COLOR       EQU     Color_Transparent
+    TREE_WINDOW_ICON_FORE_COLOR     EQU     TREE_WINDOW_TITLE_BAR_TEXT_COLOR
+    TREE_WINDOW_ICON_FORE_COLOR0    EQU     Color_GhostWhite
+    TREE_WINDOW_BACKGROUND_COLOR    EQU     Color_WhiteSmoke
+
+
+
+%endif ; _WINDOW_IC_

@@ -1,0 +1,16 @@
+; tree/inc/nasm/nasm.ic
+; Author: hyan23
+; Date: 2016.05.01
+;
+
+%ifndef _NASM_IC_
+%define _NASM_IC_
+
+; 用于NASM代码的全局宏和数据结构
+
+    TREE_LOGICAL_TRUE           EQU         1
+    TREE_LOGICAL_FALSE          EQU         0
+
+
+
+%endif ; _NASM_IC_

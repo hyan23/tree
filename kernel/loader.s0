@@ -1,0 +1,837 @@
+; tree/kernel/loader.s0
+; Author: hyan23
+; Date: 2016.05.06
+;
+
+; [TREE]加载器
+
+
+%include "../boot/args.ic"
+%include "../boot/bits.ic"
+%include "../boot/LIB.ic"
+%include "../boot/absc.ic"
+%include "../kernel/xfile.ic"
+%include "../kernel/private.ic"
+%include "../inc/nasm/nasm.ic"
+%include "../inc/nasm/spin.ic"
+%include "../inc/nasm/io/def0.ic"
+
+
+; header
+_X_LEN DD TREE_END
+
+; constant
+    THIS_SEL        EQU     LOADER_SEL
+    THIS_SEL0       EQU     LOADER_SEL0
+
+; export
+TREE_ABSSYM TREE_XENV_INIT, tree_xenv_init, THIS_SEL
+TREE_ABSSYM TREE_XENV_LOAD, tree_xenv_load, THIS_SEL
+TREE_ABSSYM TREE_XENV_FREE, tree_xenv_free, THIS_SEL
+
+[BITS 32]
+
+
+
+; code_begin:
+
+tree_xenv_init:
+
+    push ebx
+    push ecx
+    push ds
+
+    mov ax, LIB_SEL                              ; 使用静态存储
+    mov ds, ax                                   ; 计算进程表所需空间
+    mov ecx, TREE_PROC_TAB_LEN * TREE_PROC_LI
+    xor ebx, ebx                                 ; 最高特权级
+    TREE_ABSCALL ALLOC_MEMORY0                   ; 向系统申请
+    cmp ax, 0
+    jz .failed                                   ; 如果成功, 记录选择子
+    mov [ds:TREE_LIB_PROCTAB_OFS], ax
+
+                                                 ; 计算符号表所需空间
+    mov ecx, TREE_SYMBOL_TAB_LEN * TREE_SYMBOL_LI
+    TREE_ABSCALL ALLOC_MEMORY0                   ; 向系统申请
+    cmp ax, 0
+    jz .failed                                   ; 如果成功, 记录选择子
+    mov [ds:TREE_LIB_SYMBOLTAB_OFS], ax
+
+    mov eax, TREE_LOGICAL_TRUE
+    jmp near .fin
+
+.failed:                                         ; 核心代码, 不处理错误
+    mov eax, TREE_LOGICAL_FALSE
+
+.fin:
+    pop ds
+    pop ecx
+    pop ebx
+
+    retf
+
+
+
+; uint16:ax tree_xenv_load(uint28:eax:lba, uint2:ebx:pl);
+; in: eax: LBA, ebx: Privilege Level
+; ret: process id if succeeded, 0 if not
+
+tree_xenv_load:
+
+    push esi
+    push ds
+
+    call near NEW_FILE                           ; 创建进程空间
+    cmp eax, RD_RET_FAILED
+    jz .rdfailed
+    cmp eax, RD_RET_INVALID
+    jz .invalid
+    cmp eax, RD_RET_OVERFLOW
+    jz .overflow
+
+    call near REG_PROC                           ; 注册进程
+    test eax, TREE_LOGICAL_TRUE                  ; 返回: cx:pid
+    jz .rgfailed0
+
+    call near REG_SYMBOL                         ; 注册导出符号
+    test eax, TREE_LOGICAL_TRUE
+    jz .rgfailed1
+
+.success:
+    mov eax, LOAD_SUCCESS                        ; 成功
+    jmp near .fin
+
+.rdfailed:                                       ; 创建错误
+    mov eax, LOAD_READ_FAULT
+    jmp near .fin
+.invalid:
+    mov eax, LOAD_INVALID
+    jmp near .fin
+.overflow:
+    mov eax, LOAD_OVERFLOW
+    jmp near .fin
+
+.rgfailed0:                                      ; 注册错误
+    mov eax, LOAD_PROC_TAB_OVERFLOW
+    jmp near .fin
+
+.rgfailed1:
+    mov eax, LOAD_SYMBOL_TAB_OVERFLOW
+
+.fin:
+    pop ds
+    pop esi
+
+    retf
+
+
+tree_xenv_free:
+
+    push ecx
+    push edx
+    push esi
+    push edi
+    push ds
+    push es
+
+    mov ax, LIB_SEL                              ; 处理进程表
+    mov ds, ax
+    mov ax, [ds:TREE_LIB_PROCTAB_OFS]
+    mov ds, ax
+
+    dec ecx                                      ; TREE_PROC_TAB_LEN * (pid - 1)
+    and ecx, 0x0000ffff
+    mov eax, TREE_PROC_TAB_LEN
+    mul ecx
+    mov edi, eax
+
+    cmp byte [ds:(TREE_PTB_DEP_OFS + edi)], 0    ; 检查引用计数
+    jnz .failed                                  ; 尚被依赖
+
+    add edi, TREE_PTB_PID_OFS
+    mov word [ds:edi], TREE_INVALID_PID          ; *TREE_PTB_PID = TREE_INVALID_PID
+
+    mov ax, BITS_SEL                             ; 清除对应位
+    mov es, ax
+    btr [es:TREE_SYMBOL_BITS_OFS], ecx
+
+    mov ax, LIB_SEL                              ; 处理符号表
+    mov ds, ax
+    mov ax, [ds:TREE_LIB_SYMBOLTAB_OFS]
+    mov ds, ax
+    mov ax, BITS_SEL
+    mov es, ax
+
+    xor eax, eax                                 ; eax: 位图索引
+    mov ecx, TREE_SYMBOL_LI                      ; 检索关联
+    mov edi, TREE_STB_PID_OFS
+.s0:
+    mov dx, [ds:edi]
+    cmp dx, [ss:(20 + esp)]                      ; 与 cx:pid 比较
+    jnz .next
+
+    mov word [ds:edi], TREE_INVALID_PID          ; *TREE_STB_PID = TREE_INVALID_PID
+    btr [es:TREE_SYMBOL_BITS_OFS], eax           ; 清除对应位
+
+.next:
+    add edi, TREE_SYMBOL_TAB_LEN
+    inc eax
+    loop .s0
+                                                 ; 被我依赖的
+    mov ecx, [ss:(20 + esp)]                     ; 更新依赖项引用计数
+    TREE_LOCATE_PROC                             ; 定位到进程空间
+
+    mov ax, LIB_SEL                              ; 定位到进程表
+    mov es, ax
+    mov ax, [es:TREE_LIB_PROCTAB_OFS]
+    mov es, ax
+
+    mov ecx, TREE_PROC_DEPEND_SIZE / 2           ; 依赖项数量
+    xor esi, esi
+.s1:
+    push ecx
+    mov cx, [ds:(TREE_PROC_DEPEND_OFS + esi)]
+    cmp cx, TREE_INVALID_PID
+    jz .fin0
+
+    dec ecx                                      ; TREE_PROC_TAB_LEN * (pid - 1)
+    and ecx, 0x0000ffff
+    mov eax, TREE_PROC_TAB_LEN
+    mul ecx
+    add eax, TREE_PTB_DEP_OFS
+    mov edi, eax
+
+    TREE_SYNC_BEGIN THIS_SEL0, tree_xenv_free_lock
+
+    mov cl, [es:edi]                             ; dependent --
+    dec cl
+    mov [es:edi], cl
+
+    TREE_SYNC_END THIS_SEL0, tree_xenv_free_lock
+
+.next1:
+    add esi, 2                                   ; 下一条目
+    pop ecx
+    loop .s1
+    jmp near .j
+
+.fin0:
+    pop ecx                                      ; 垃圾数据
+
+.j:
+                                                 ; 注销局部描述符表
+    mov cx, [ds:TREE_PROC_PRIVATE_LDT_LOCATOR_OFS]
+    TREE_ABSCALL REM_GDT_DESCRIPTOR0
+
+    TREE_ABSCALL FREE_MEMORY                     ; 释放空间
+
+    mov eax, TREE_LOGICAL_TRUE
+    jmp near .fin
+
+.failed:
+    mov eax, TREE_LOGICAL_FALSE
+
+.fin:
+    pop es
+    pop ds
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+
+    retf
+
+
+
+; bool:eax NEW_FILE(uint28:eax:sec, uint16*:cx:sel);
+; 从扇区读取源文件, 创建进程空间
+; in: eax: 28位的LBA 扇区号
+; ret: eax: returns, cx: 所在区域选择子
+
+; 进程空间布局:
+;                   ~~~~ 内存低地址区 ~~~~
+; --------------------------------------------------------
+;    用户栈    |             TREE_USR_STACK                |
+; --------------------------------------------------------
+;   进程控制块 |            TREE_PROC_CB_SIZE              |
+; --------------------------------------------------------
+;    用户代码  |                 代码段长度                  |
+; --------------------------------------------------------
+;    用户数据  |                 数据段长度                  |
+; --------------------------------------------------------
+;                   ~~~~ 内存高地址区 ~~~~                  |
+
+; returns value
+    RD_RET_SUCCESS          EQU     0
+    RD_RET_FAILED           EQU     1
+    RD_RET_INVALID          EQU     -1
+    RD_RET_OVERFLOW         EQU     -2
+
+NEW_FILE:
+
+    push ebx
+    push edx
+    push ds
+
+    push ecx                                     ; 保护ecx(15 - 31)
+
+    mov edx, eax
+    mov ecx, 0x200                               ; 请求缓冲区
+    xor ebx, ebx                                 ; 最高特权级
+    TREE_ABSCALL ALLOC_MEMORY0                   ; 大小: 一个扇区
+    cmp ax, 0
+    jz .overflow
+    mov ds, ax
+
+    mov eax, edx
+    xor ebx, ebx
+    TREE_ABSCALL READ_SECTOR                     ; 读文件首部
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed
+
+    mov al, [ds:ebx]                             ; 检查魔数
+    cmp al, 't'
+    jnz .invalid
+    mov al, [ds:(1 + ebx)]
+    cmp al, 'r'
+    jnz .invalid
+    mov al, [ds:(2 + ebx)]
+    cmp al, 'e'
+    jnz .invalid
+    mov al, [ds:(3 + ebx)]
+    cmp al, 'e'
+    jnz .invalid
+
+    mov ecx, [ds:TREE_XFILE_LEN_OFS]             ; 读源文件大小
+    TREE_ABSCALL FREE_MEMORY                     ; 释放缓冲区
+    add ecx, TREE_PROC_FRONT_PART                ; 计算进程空间
+    mov ebx, [ss:(12 + esp)]                     ; 进程特权级
+    TREE_ABSCALL ALLOC_MEMORY0                   ; 请求进程空间
+    cmp ax, 0
+    jz .overflow
+    mov ds, ax
+
+    mov eax, edx                                 ; LBA
+    mov ebx, TREE_PROC_FRONT_PART - 1
+    sub ecx, TREE_PROC_FRONT_PART
+    TREE_ABSCALL READ_BLOCK                      ; 读源程序
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed
+
+                                                 ; 以下生成局部描述符表
+                                                 ; 所有特权级下都生成四套特权级
+    mov cx, ds                                   ; 进程空间描述符
+    TREE_ABSCALL GET_GDT_DESCRIPTOR
+    push edx
+    push eax
+
+    TREE_ABSCALL GET_DES_PROPERTY                ; 段基址
+    push eax
+
+    test edx, 0x00800000
+    jz .min
+.4k:
+    mov edx, 0x1000                              ; 字节粒度
+    jmp near .calc
+.min:
+    mov edx, TREE_MEM_MIN
+.calc:
+    inc ecx                                      ; 界限 ++
+    mov eax, ecx
+    mul edx
+    push eax
+
+    mov edx, [ss:(12 + esp)]                     ; 处理代码段
+    mov eax, [ss:(8 + esp)]
+
+    mov ebx, [ds:ACCESS_SRC(TREE_XFILE_CODE_OFS)] ; 代码界限: ecx - ebx - 1
+    mov ecx, [ds:ACCESS_SRC(TREE_XFILE_DATA_OFS)]
+    sub ecx, ebx
+    dec ecx
+
+    cmp ecx, 0xffffe                             ; 所有子段均采用字节
+    ja .overflow0                                ; 粒度, 所以一个段的大小
+                                                 ; 不要超过0xfffff, 即64kb
+
+    add ebx, [ss:(4 + esp)]                      ; 代码基地址
+    add ebx, TREE_PROC_FRONT_PART - 1
+
+%macro SET_LOCALE_DESCRIPTOR 2
+
+    mov [ds:(%1)], eax
+    mov [ds:(4 + %1)], edx
+    mov ax, ((%1) - TREE_PROC_LDT_OFS) / 8
+    shl ax, 3
+    or ax, bx                                    ; 请求特权级
+    or ax, 0000000000000_1_00b                   ; 局部描述符
+
+    mov [ds:(%2)], ax
+
+%endmacro ; SET_LOCALE_DESCRIPTOR
+
+    call near UpdateDescriptor                   ; 生成描述符
+    mov ebx, 0x00000800                          ; 添加执行权限
+    and edx, 0xfffff0ff
+    or edx, ebx
+
+    mov ecx, eax
+    TREE_ABSCALL ADD_GDT_DESCRIPTOR              ; 代码共享
+    cmp ax, 0                                    ; 导出符号只能被运行在同一
+    jz .overflow0                                ; 特权级下的应用程序调用。
+    or ax, [ss:(28 + esp)] ;;;;;;;;;;;;;;;;;;;;;;;;;; ;
+                                                 ;or ax, 0000000000000_0_11b
+    mov [ds:TREE_PROC_PRIVATE_GC_SEL_OFS], ax
+    mov eax, ecx
+    mov ebx, [ss:(28 + esp)]
+    SET_LOCALE_DESCRIPTOR TREE_PROC_LDT_CODE_DES_OFS, \
+                    TREE_PROC_SEL_CODE_SEL_OFS
+
+
+    mov edx, [ss:(12 + esp)]                     ; 处理数据段
+    mov eax, [ss:(8 + esp)]
+
+    mov ebx, [ds:ACCESS_SRC(TREE_XFILE_DATA_OFS)]
+    mov ecx, [ds:ACCESS_SRC(4 + TREE_XFILE_DATA_OFS)]
+    sub ecx, ebx
+    dec ecx                                      ; 数据界限
+    cmp ecx, 0xffffe
+    ja .overflow0
+
+    add ebx, [ss:(4 + esp)]                      ; 数据基地址
+    add ebx, TREE_PROC_FRONT_PART - 1
+
+    call near UpdateDescriptor
+    mov ecx, eax
+    TREE_ABSCALL ADD_GDT_DESCRIPTOR              ; 数据共享
+    cmp ax, 0                                    ; 导出符号只能被运行在同一
+    jz .overflow0                                ; 特权级下的应用程序调用。
+    or ax, [ss:(28 + esp)] ;;;;;;;;;;;;;;;;;;;;;;;;;; ;
+    mov [ds:TREE_PROC_PRIVATE_GD_SEL_OFS], ax
+    mov eax, ecx
+
+    mov ebx, [ss:(28 + esp)]
+    SET_LOCALE_DESCRIPTOR TREE_PROC_LDT_DATA_DES_OFS, \
+                    TREE_PROC_SEL_DATA_SEL_OFS
+
+
+    mov edx, [ss:(12 + esp)]                     ; 三级特权栈
+    mov eax, [ss:(8 + esp)]
+
+    mov ebx, [ss:(4 + esp)]                      ; 栈基址
+    xor ecx, ecx                                 ; 栈界限
+    call near UpdateDescriptor                   ; 生成描述符
+    and edx, 0xfffff0ff                          ; 向下扩展的栈
+    or edx, 0x00000600
+    and edx, 0xffff9fff                          ; DPL
+    or edx, 0x00006000
+    mov ebx, 3
+    SET_LOCALE_DESCRIPTOR TREE_PROC_LDT_STK_3_DES_OFS, \
+                    TREE_PROC_SEL_STK_3_SEL_OFS
+
+
+    mov edx, [ss:(12 + esp)]                     ; 二级特权栈
+    mov eax, [ss:(8 + esp)]
+
+    mov ebx, [ss:(4 + esp)]                      ; 栈基址
+    add ebx, TREE_USR_STACK
+    xor ecx, ecx                                 ; 栈界限
+    call near UpdateDescriptor                   ; 生成描述符
+    and edx, 0xfffff0ff                          ; 向下扩展的栈
+    or edx, 0x00000600
+    and edx, 0xffff9fff                          ; DPL
+    or edx, 0x00004000
+    mov ebx, 2
+    SET_LOCALE_DESCRIPTOR TREE_PROC_LDT_STK_2_DES_OFS, \
+                    TREE_PROC_SEL_STK_2_SEL_OFS
+
+
+    mov edx, [ss:(12 + esp)]                     ; 一级特权栈
+    mov eax, [ss:(8 + esp)]
+
+    mov ebx, [ss:(4 + esp)]                      ; 栈基址
+    add ebx, TREE_USR_STACK + TREE_USR_STACK
+    xor ecx, ecx                                 ; 栈界限
+    call near UpdateDescriptor                   ; 生成描述符
+    and edx, 0xfffff0ff                          ; 向下扩展的栈
+    or edx, 0x00000600
+    and edx, 0xffff9fff                          ; DPL
+    or edx, 0x00002000
+    mov ebx, 1
+    SET_LOCALE_DESCRIPTOR TREE_PROC_LDT_STK_1_DES_OFS, \
+                    TREE_PROC_SEL_STK_1_SEL_OFS
+
+
+    mov edx, [ss:(12 + esp)]                     ; 最高级特权栈
+    mov eax, [ss:(8 + esp)]
+
+    mov ebx, [ss:(4 + esp)]                      ; 栈基址
+    add ebx, TREE_USR_STACK + TREE_USR_STACK + \
+                TREE_USR_STACK
+    xor ecx, ecx                                 ; 栈界限
+    call near UpdateDescriptor                   ; 生成描述符
+    and edx, 0xfffff0ff                          ; 向下扩展的栈
+    or edx, 0x00000600
+    and edx, 0xffff9fff                          ; DPL
+    mov ebx, 0
+    SET_LOCALE_DESCRIPTOR TREE_PROC_LDT_STK_0_DES_OFS, \
+                    TREE_PROC_SEL_STK_0_SEL_OFS
+
+
+; 安装LDT 描述符到GDT 中:
+;    安装LDT 的方式与安装GDT 有所不同, 处理器要求在GDT 中安装每个LDT的
+; 描述符, 每当要使用这些LDT 时, 可以使用他们的选择子来访问GDT, 将LDT 描述符
+; 加载到LDTR 寄存器。
+;    LDT 描述符的结构和普通描述符没有太大的区别,
+; 创建一个LDT 描述符时应注意以下几点:
+;    1. 段界限不超过64kb, 可以使用两种粒度。
+;    2. D/B位和L位对LDT 描述符没有意义, 固定为0。
+;    3. LDT 描述符的S 位应设为0, 表示系统段或门描述符。
+;    4. 在S = 0 的基础之上, TYPE字段设为'0010'表明这是一个LDT 描述符。
+; 一个典型的LDT 描述符:0Xxx4x82xx:0Xxxxxxxxx
+
+    mov edx, [ss:(12 + esp)]                     ; 生成LDT描述符
+    mov eax, [ss:(8 + esp)]
+    mov ebx, [ss:(4 + esp)]
+    add ebx, TREE_PROC_LDT_OFS
+    mov ecx, TREE_PROC_LDT_SIZE - 1
+    call near UpdateDescriptor
+    and edx, 0xff0f00ff
+    or edx, 0x00408200
+    mov ebx, [ss:(28 + esp)]                     ; DPL
+    shl ebx, 13
+    or edx, ebx
+    TREE_ABSCALL ADD_GDT_DESCRIPTOR
+    cmp ax, 0                                    ; 可能失败
+    jz .overflow0
+                                                 ;or ax, [ss:(28 + esp)]
+    mov [ds:TREE_PROC_PRIVATE_LDT_LOCATOR_OFS], ax
+
+    pop eax                                      ; 已过时
+    pop eax
+    pop eax
+    pop eax
+
+    xor ebx, ebx                                 ; 初始化依赖表
+    mov ecx, TREE_PROC_DEPEND_SIZE / 4
+.s0:
+    mov dword [ds:(TREE_PROC_DEPEND_OFS + ebx)], 0
+    inc ebx
+    inc ebx
+    inc ebx
+    inc ebx
+    loop .s0
+
+.end:
+    mov eax, RD_RET_SUCCESS
+    jmp near .fin
+
+.overflow0:                                      ; 超过64kb
+
+    pop eax                                      ; 垃圾数据
+    pop eax
+    pop eax
+    pop eax
+
+    TREE_ABSCALL FREE_MEMORY
+
+.overflow:                                       ; 内存满
+    mov eax, RD_RET_OVERFLOW
+    jmp near .fin
+
+.invalid:
+    TREE_ABSCALL FREE_MEMORY                     ; 释放缓冲区
+    mov eax, RD_RET_INVALID
+    jmp near .fin
+
+.failed:                                         ; 读失败
+    TREE_ABSCALL FREE_MEMORY
+    mov eax, RD_RET_FAILED
+
+.fin:
+    mov dx, ds                                   ; 保护ecx(15 - 31)
+    pop ecx
+    mov cx, dx
+
+    pop ds
+    pop edx
+    pop ebx
+
+    ret
+
+
+; 使用新的base+limit+g更新描述符
+; in: edx:eax: src, ebx: newbase, ecx: newlimit
+; ret: updated descriptor
+
+UpdateDescriptor:
+
+    push ecx
+
+    push ebx
+    shl ebx, 16                                  ; 线性基地址(0 - 15)
+    and eax, 0x0000ffff
+    or eax, ebx
+    pop ebx
+    push ebx
+    and ebx, 0x00ff0000                          ; 线性基地址(16 - 23)
+    shr ebx, 16
+    and edx, 0xffffff00
+    or edx, ebx
+    pop ebx
+    push ebx
+    and ebx, 0xff000000                          ; 线性基地址(24 - 31)
+    and edx, 0x00ffffff
+    or edx, ebx
+    pop ebx
+    mov ax, cx                                   ; 段界限(0 - 15)
+    and ecx, 0x000f0000                          ; 段界限(16 - 19)
+    and edx, 0xfff0ffff
+    or edx, ecx
+
+    and edx, 0xff7fffff                          ; 字节粒度
+
+    pop ecx
+    ret
+
+
+
+; REG_PROC
+; in: cx: 进程空间选择子
+; ret: eax: 1: 成功, 0: 失败, cx: process id
+
+; 进程表布局:
+; ---------------------------------------------------------
+;   0 - 2  |    3   | 3 - 19  | 19 - 23 | 23 - 25 | 25- 31 |
+; ----------------------------------------------------------
+;    pid   | 引用计数 | 进程名  | 文件版本 |  段地址   | 保留   |
+; ---------------------------------------------------------
+;
+
+REG_PROC:
+
+    push ebx
+    push edx
+    push esi
+    push edi
+    push ds
+    push es
+
+    push ecx                                     ; 保护ecx(15 - 31)
+    mov ds, cx                                   ; 进程空间
+    mov ax, BITS_SEL                             ; 全局位图
+    mov es, ax
+
+.q0:                                             ; 搜索进程表位图
+    xor eax, eax
+    mov ecx, TREE_PROC_LI                        ; 计数, 避免超界
+
+.s0:
+    bts [es:TREE_PROC_BITS_OFS], eax             ; 测试位并置1
+    jnc .j0                                      ; 找到空闲位
+    inc eax                                      ; eax保存着索引
+    loop .s0
+
+    jmp near .failed                             ; 进程表已满
+
+.j0:
+    inc eax                                      ; 空闲位索引即 pid
+    push eax                                     ; 用户pid 从1开始
+
+    dec eax
+    mov ecx, TREE_PROC_TAB_LEN                   ; 计算空闲位在进程表内偏移
+    mul ecx
+    mov edi, eax
+
+    mov ax, LIB_SEL                              ; 访问静态存储
+    mov es, ax
+    mov ax, [es:TREE_LIB_PROCTAB_OFS]            ; 定位到进程表
+    mov es, ax
+
+    mov eax, [ss:esp]                            ; 写入pid
+    mov [es:edi], ax
+    inc edi
+    inc edi
+
+    mov byte [es:edi], 0                         ; 引用计数
+    inc edi
+
+    mov eax, [ds:ACCESS_SRC(TREE_XFILE_DATA_OFS)] ; 数据段起始
+    mov ebx, [ds:ACCESS_SRC(TREE_XFILE_NAME_OFS)] ; 文件名偏移
+    xor esi, esi
+    add esi, eax                                 ; 文件名地址
+    add esi, ebx
+
+    mov ecx, TREE_XFILE_NAME_LEN                 ; 注册文件名
+    push edi                                     ; 参看循环出口
+
+.copy_proc_name:
+    mov al, [ds:ACCESS_SRC(esi)]
+    mov [es:edi], al
+    inc esi
+    inc edi
+    cmp al, PCHAR_EOS                            ; 同时拷贝 PCHAR_EOS
+    jz .bk
+    loop .copy_proc_name
+
+.bk:
+    pop edi                                      ; edi += TREE_X_NAME_LEN
+    add edi, TREE_XFILE_NAME_LEN
+
+    mov eax, [ds:ACCESS_SRC(TREE_XFILE_DATA_OFS)]
+    mov ebx, [ds:ACCESS_SRC(TREE_XFILE_VER_OFS)] ; 版本号在数据段偏移
+    xor esi, esi
+    add esi, eax
+    add esi, ebx
+
+    mov eax, [ds:ACCESS_SRC(esi)]                ; 注册文件版本
+    mov [es:edi], eax
+    inc edi
+    inc edi
+    inc edi
+    inc edi
+
+    mov cx, ds                                   ; 写入段地址
+    mov [es:edi], cx
+
+    pop eax                                      ; 返回 pid
+    pop ecx
+    mov cx, ax
+
+    mov eax, TREE_LOGICAL_TRUE
+
+.fin:
+    pop es
+    pop ds
+    pop edi
+    pop esi
+    pop edx
+    pop ebx
+
+    ret
+
+.failed:
+    pop ecx
+    mov cx, TREE_INVALID_PID
+    mov eax, TREE_LOGICAL_FALSE
+
+    jmp near .fin
+
+
+; bool:eax REG_SYMBOL(uint16:cx:pid);
+; in: cx: process id
+; ret: eax: 1: 成功, 0: 失败
+
+; 符号表布局:
+; --------------------------------------------------------------
+;    0 - 2  |  2 - 18   |   18 - 20  |   20 - 22   |   22 - 31  |
+; --------------------------------------------------------------
+;    pid    |   符号名  |  符号偏移地址 | 符号段地址    |   保留     |
+; ---------------------------------------------------------------
+;
+
+REG_SYMBOL:
+
+    push ecx
+    push edx
+    push esi
+    push edi
+    push ds
+    push es
+
+    TREE_LOCATE_PROC                             ; 定位到进程空间
+                                                 ; 源文件的:
+    mov cx, [ds:ACCESS_SRC(10 + TREE_XFILE_TAB_OFS)] ; 导出表条目数
+    mov esi, [ds:ACCESS_SRC(6 + TREE_XFILE_TAB_OFS)] ; 导出表偏移
+
+    ;jcxz .nul                                   ; 没有导出项
+    cmp cx, 0
+    jz .nul
+
+    xor eax, eax                                 ; 位图索引
+    and ecx, 0x0000ffff                          ; 处理所有符号
+.s0:
+    push ecx                                     ; 增量: -1
+    push esi                                     ; 增量: +TREE_SYMBOL_TAB_LEN
+
+    mov cx, BITS_SEL                             ; 全局位图
+    mov es, cx
+
+.q1:                                             ; 搜索符号表位图
+    mov ecx, TREE_SYMBOL_LI
+.s1:
+    bts [es:TREE_SYMBOL_BITS_OFS], eax
+    jnc .j1
+    inc eax
+    loop .s1
+
+    jmp near .failed                             ; 符号表已满
+
+.j1:
+    push eax                                     ; 保存eax, 避免下次重新开始搜索
+
+    mov ecx, TREE_SYMBOL_TAB_LEN                 ; 计算空闲位在符号表内偏移
+    mul ecx
+    mov edi, eax
+
+    mov ax, LIB_SEL
+    mov es, ax
+    mov ax, [es:TREE_LIB_SYMBOLTAB_OFS]          ; 定位到符号表
+    mov es, ax
+
+    mov cx, [ss:(32 + esp)]                      ; 注册符号所属pid
+    mov [es:edi], cx
+    inc edi
+    inc edi
+
+    mov ecx, TREE_XPT_NAME_LEN                   ; 注册符号名
+.copy_symbol_name:
+    mov al, [ds:ACCESS_SRC(esi)]
+    mov [es:edi], al
+    inc esi
+    inc edi
+    loop .copy_symbol_name
+
+.copy_symbol_ads:
+    mov eax, [ds:ACCESS_SRC(esi)]                ; 符号偏移
+    mov [es:edi], eax
+    inc edi
+    inc edi
+    inc edi
+    inc edi
+
+    mov ax, [ds:TREE_PROC_PRIVATE_GC_SEL_OFS]    ; 代码段选择子
+    mov [es:edi], ax
+
+    pop eax
+    pop esi
+    add esi, TREE_XPT_ITEM_LEN                   ; 导出表下一条目
+
+    pop ecx
+    loop .s0
+
+.nul:
+    mov eax, TREE_LOGICAL_TRUE
+
+.fin:
+    pop es
+    pop ds
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+
+    ret
+
+.failed:
+    ; TODO: 撤销所做修改(由执行程序完成)
+    pop esi
+    pop ecx
+
+    mov eax, TREE_LOGICAL_FALSE
+
+    jmp near .fin
+
+
+TREE_SPIN_LOCK tree_xenv_free_lock
+
+TREE_END:

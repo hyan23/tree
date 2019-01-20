@@ -1,0 +1,47 @@
+; tree/inc/nasm/utility/queue.ic
+; Author: hyan23
+; Date: 2016.07.23
+;
+
+; utility/queue
+
+%ifndef _QUEUE_IC_
+%define _QUEUE_IC_
+
+
+; uint16:ax:queue QueueCreate(void);
+    __TREE_IMPORT @queue0, 'QueueCreate', QueueCreate
+
+; void QueueDestroy(ds:queue);
+    __TREE_IMPORT @queue1, 'QueueDestroy', QueueDestroy
+
+; uint32:eax QueueGetCount(ds:queue);
+    __TREE_IMPORT @queue2, 'QueueGetCount', QueueGetCount
+
+; bool:eax QueueEmpty(ds:queue);
+    __TREE_IMPORT @queue3, 'QueueEmpty', QueueEmpty
+
+; void QueueClear(ds:queue);
+    __TREE_IMPORT @queue4, 'QueueClear', QueueClear
+
+; bool:eax QueuePushBack(ds:queue, uint32:eax:_E);
+    __TREE_IMPORT @queue5, 'QueuePushBack', QueuePushBack
+
+; uint32:eax QueueGet(ds:queue);
+    __TREE_IMPORT @queue6, 'QueueGet', QueueGet
+
+; uint32:eax QueueGetFront(ds:queue);
+    __TREE_IMPORT @queue7, 'QueueGetFront', QueueGetFront
+
+; void QueuePopFront(ds:queue);
+    __TREE_IMPORT @queue8, 'QueuePopFront', QueuePopFront
+
+; uint32:eax QueueGetBack(ds:queue);
+    __TREE_IMPORT @queue9, 'QueueGetBack', QueueGetBack
+
+; void QueuePopBack(ds:queue);
+    __TREE_IMPORT @queue10, 'QueuePopBack', QueuePopBack
+
+
+
+%endif ; _QUEUE_IC_

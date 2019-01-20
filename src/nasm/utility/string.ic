@@ -1,0 +1,25 @@
+; tree/inc/nasm/utility/string.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+%ifndef _STRING_IC_
+%define _STRING_IC_
+
+; bool:eax isabc(uchar:cl:ch);
+    __TREE_IMPORT @string0, 'isabc', isabc
+
+; uint32:eax strlen(uint32*ds:ebx:sz);
+    __TREE_IMPORT @string1, 'strlen', strlen
+
+; void strcpy(uint32*ds:esi:src, uint32*es:edi:dst);
+    __TREE_IMPORT @string4, 'strcpy', strcpy
+
+; bool:eax strequ(uint32*ds:esi:src, uint32*ds:edi:dst);
+    __TREE_IMPORT @string2, 'strequ', strequ
+
+; bool:eax strequ0(uint32*ds:esi:src, uint32*ds:edi:dst);
+    __TREE_IMPORT @string3, 'strequ0', strequ0
+
+
+%endif ; _STRING_IC_

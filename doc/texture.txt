@@ -1,0 +1,57 @@
+08680550639e[CPU0  ] read_virtual_checks(): read beyond limit
+12103984439i[      ] Ctrl-C detected in signal handler.
+Next at t=12104205716
+(0) [0x0000005249d1] 0118:0000000000000132 (unk. ctxt): jmp .-5 (0x005249d1)      ; e9fbffffff
+<bochs:2> print-stack
+Stack address size 4
+ | STACK 0x005befe7 [0x00000000]
+ | STACK 0x005befeb [0x000004b8]
+ | STACK 0x005befef [0x000004cb]
+ | STACK 0x005beff3 [0x00010283]
+ | STACK 0x005beff7 [0x00000f4b]
+ | STACK 0x005beffb [0x00000017]
+ | STACK 0x005befff [0xfc3f0dbf]
+ | STACK 0x005bf003 [0x0040f95b]
+ | STACK 0x005bf007 [0x09ff016f]
+ | STACK 0x005bf00b [0x0040f35c]
+ | STACK 0x005bf00f [0xb0000000]
+ | STACK 0x005bf013 [0x0040f75b]
+ | STACK 0x005bf017 [0xc0000000]
+ | STACK 0x005bf01b [0x0040d65b]
+ | STACK 0x005bf01f [0xd0000000]
+ | STACK 0x005bf023 [0x0040b65b]
+<bochs:3> tss
+:3: syntax error at 'tss'
+<bochs:4> info tss
+tr:s=0x600, base=0x0000000000100200, valid=1
+ss:esp(0): 0x002c:0x00000fff
+ss:esp(1): 0x0025:0x00000fff
+ss:esp(2): 0x001e:0x00000fff
+cr3: 0x00000000
+eip: 0x000004a6
+eflags: 0x00000087
+cs: 0x01f0 ds: 0x0038 ss: 0x002c
+es: 0x0780 fs: 0x0000 gs: 0x04e0
+eax: 0x00000608  ebx: 0x00200780  ecx: 0x00000400  edx: 0x002089a4
+esi: 0x00000036  edi: 0x0000005e  ebp: 0x00000000  esp: 0x00000f9b
+ldt: 0x05f0
+i/o map: 0x0067
+<bochs:5> sreg
+es:0x0823, dh=0x0040f310, dl=0x1f4006ff, valid=7
+        Data segment, base=0x00101f40, limit=0x000006ff, Read/Write, Accessed
+cs:0x0118, dh=0x00409952, dl=0x489f023f, valid=1
+        Code segment, base=0x0052489f, limit=0x0000023f, Execute-Only, Non-Conforming, Accessed, 32-bit
+ss:0x002c, dh=0x0040975b, dl=0xe0000000, valid=1
+        Data segment, base=0x005be000, limit=0x00000000, Read/Write, Expand-down, Accessed
+ds:0x0038, dh=0x00409304, dl=0x0000ffff, valid=1
+        Data segment, base=0x00040000, limit=0x0000ffff, Read/Write, Accessed
+fs:0x0000, dh=0x00409300, dl=0x80001000, valid=0
+gs:0x04e0, dh=0x00c0f359, dl=0x9000000c, valid=1
+        Data segment, base=0x00599000, limit=0x0000cfff, Read/Write, Accessed
+ldtr:0x05f0, dh=0x0040e25b, dl=0xefff03ff, valid=1
+tr:0x0600, dh=0x00008b10, dl=0x0200007f, valid=1
+gdtr:base=0x0000000000010000, limit=0xffff
+idtr:base=0x0000000000020000, limit=0xffff
+<bochs:6>
+
+texture

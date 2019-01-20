@@ -1,0 +1,28 @@
+﻿; tree/inc/nasm/tree/time.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+%ifndef _TIME_IC_
+%define _TIME_IC_
+
+; returns in bcd
+; void gettime(int16*:ax:sec, int16*:cx:min, int16*:dx:hour);
+    __TREE_IMPORT @time01, 'gettime', gettime
+
+; void gettime_str(char*ds:ebx dst);
+    __TREE_IMPORT @time03, 'gettime_str', gettime_str
+
+; returns in bcd
+; void getdate(int16*:ax:day, int16*:cx:month, int16*:dx:year);
+    __TREE_IMPORT @time02, 'getdate', getdate
+
+; void getdate_str(char*ds:ebx dst);
+    __TREE_IMPORT @time04, 'getdate_str', getdate_str
+
+; uint32:eax getseed(void);
+    __TREE_EXPORT @5, 'getseed', getseed
+
+
+
+%endif ; _TIME_IC_

@@ -1,0 +1,287 @@
+; tree/boot/mbr.s0
+; Author: hyan23
+; Date: 2016.04.29
+;
+
+; 512字节的主引导代码
+; 加载mbr32.bin(即baser, mbrx.bin(mbr extended, 完成后跳转,
+; 随即, mbrx复制位于0x7e00处这份代码的32位版本, 以复用
+; 实现的read_sector和read_block两个共享例程(32位)
+; 入口: BASER_SEL:0x7c04, BASER_SEL:0x7c0a
+
+%include "../boot/boot.ic"
+%include "../boot/absc.ic"
+%include "../inc/nasm/nasm.ic"
+%include "../inc/nasm/io/def0.ic"
+
+[BITS 16]
+
+
+SECTION tree_mbr
+
+; header
+    jmp near mbr_start
+    DB 0xcc                                      ; 规范化, 构成4字节首部
+
+; constant
+    THIS_SEG        EQU        0x07c0
+    THIS_OFS        EQU        0x7c00
+
+; export
+TREE_ABSSYM0 rdsector, read_sector, THIS_SEG
+TREE_ABSSYM0 rdblock, read_block, THIS_SEG
+TREE_ABSSYM0 ldx0, LOAD_X0, THIS_SEG
+TREE_ABSSYM0 putstr, PUTSTR, THIS_SEG
+
+
+; bool:eax read_sector(uint28:eax:sector,
+;    uint32*:ds:ebx:buffer);
+
+read_sector:
+
+    push ebx
+    push ecx
+    push edx
+
+    mov ecx, eax
+
+    mov al, 1                                    ; 告诉硬盘本次操作一个扇区
+    mov dx, 0x1f2
+    out dx, al
+
+    mov eax, ecx
+
+    mov dx, 0x1f3
+    out dx, al                                   ; 写 0 - 7
+
+    shr eax, 8
+    mov dx, 0x1f4
+    out dx, al                                   ; 写 8 - 15
+
+    shr eax, 8
+    mov dx, 0x1f5
+    out dx, al                                   ; 写 16 - 23
+
+    shr eax, 8                                   ; 选择最高8位
+    and al, 0x0f                                 ; 清28 - 31
+    or al, 0xe0                                  ; 使用LBA模式
+    mov dx, 0x1f6
+    out dx, al                                   ; 写24 - 27
+
+    mov al, 0x20                                 ; 请求从硬盘读取数据
+    mov dx, 0x1f7
+    out dx, al
+
+    in al, dx                                    ; 询问有无错误
+    test al, 0x01
+    jnz .failed
+
+.wait:                                           ; 等待硬盘准备完成
+    in al, dx
+    and al, 0x88                                 ; 保留: 1000_1000
+    cmp al, 0x08
+    jnz .wait
+
+    mov ecx, 256                                 ; 准备读数据
+    mov dx, 0x1f0
+
+.readw:                                          ; 读一个扇区
+    in ax, dx
+    mov [ds:ebx], ax
+    add ebx, 2
+    loop .readw
+
+    mov eax, TREE_LOGICAL_TRUE                   ; 成功
+
+.fin:
+    pop edx
+    pop ecx
+    pop ebx
+
+    retf
+
+.failed:
+    mov eax, TREE_LOGICAL_FALSE                  ; 失败
+    jmp near .fin
+
+
+
+; bool:eax read_block(uint28:eax:sector,
+;    uint32*:ds:ebx:buffer, uint32:ecx:bytes);
+
+read_block:
+
+    push ebx
+    push ecx
+    push edx
+
+    push eax
+
+    cmp ecx, 0x200                               ; 计算扇区数
+    ja .j                                        ; 数据量 > 512字节
+    mov ax, 1
+    jmp near .j0
+
+.j:
+    mov ax, cx                                   ; ecx -> dx:ax
+    shr ecx, 16
+    mov dx, cx
+
+    mov cx, 0x200
+    div cx
+
+    cmp dx, 0
+    jz .j0                                       ; 被整除
+    inc ax                                       ; 否则, 多读一个扇区
+
+.j0:
+    mov cx, ax                                   ; 最终结果
+
+    pop eax
+
+.read:                                           ; 读数据
+    mov edx, eax
+    call THIS_SEG:read_sector
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed
+    mov eax, edx
+    inc eax
+    add ebx, 0x200
+    loop .read
+
+.end:
+    mov eax, TREE_LOGICAL_TRUE
+    jmp near .fin
+
+.failed:
+    mov eax, TREE_LOGICAL_FALSE
+
+.fin:
+    pop edx
+    pop ecx
+    pop ebx
+
+    retf
+
+
+; bool:eax LOAD_X0(uint28:eax:sector, uint32*:ds:ebx:buffer);
+; 加载绝对定位的代码, 这个例程只在系统自举期间使用(16位实模式)
+
+LOAD_X0:
+
+    push ebx
+    push ecx
+
+    mov ecx, eax
+    call THIS_SEG:read_sector                    ; 预读一个扇区
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed
+
+    mov eax, ecx
+    mov ecx, [ds:ebx]                            ; 文件大小
+    call THIS_SEG:read_block                     ; 读剩余部分
+
+.fin:
+    pop ecx
+    pop ebx
+
+    retf
+
+.failed:
+    mov eax, TREE_LOGICAL_FALSE
+
+
+
+; 入口点
+
+mbr_start:
+    xor cx, cx
+    mov ds, cx
+    mov ss, cx                                   ; 初始化栈
+    mov sp, THIS_OFS                             ; 0x7c00下: 系统核心栈
+
+%macro LOAD_X 2
+
+    mov eax, %1
+    mov ebx, %2
+    call THIS_SEG:LOAD_X0
+    test eax, TREE_LOGICAL_TRUE
+    jz mbr_failed
+
+%endmacro ; LOAD_X
+
+    LOAD_X MBR32_SEC, MBR32_OFS                  ; 加载:mbr32
+    LOAD_X MBRX_SEC, MBRX_OFS                    ; 加载:mbrx
+
+    mov bx, THIS_OFS + JUMP_INTO
+    call near PUTSTR
+
+    jmp 0x0000:(4 + MBRX_OFS)                    ; 跳转到:mbrx
+
+
+mbr_failed:                                      ; 初始化失败
+    mov bx, THIS_OFS + MBR_FAILED                ; 打印消息并且停机
+    call near PUTSTR
+
+    cli                                          ; 无限停机
+.j: hlt
+    jmp near .j
+
+
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+PUTSTR:                                          ; 简单打印
+    pusha
+
+    push es
+    mov ax, 0xb800
+    mov es, ax
+
+    mov cx, 2000                                 ; 先清屏
+    xor di, di
+.s0:
+    mov word [es:di], 0x0720
+    inc di
+    inc di
+    loop .s0
+
+    ; xor cx, cx                                 ; cx = 0
+    xor di, di
+.s1:                                             ; 手动搬运
+    mov cl, [ds:bx]
+    jcxz .fin
+    mov [es:di], cl
+    inc bx
+    inc di
+    inc di
+    jmp near .s1
+
+.fin:
+    pop es
+
+    mov al, 0xe                                  ; 更新一下光标
+    mov dx, 0x3d4                                ; 第1行第1列
+    out dx, al
+    xor al, al
+    inc dx
+    out dx, al
+    mov al, 0xf
+    mov dx, 0x3d4
+    out dx, al
+    xor al, al
+    inc dx
+    out dx, al
+
+    popa
+
+    ret
+
+
+MBR_FAILED  DB      'sorry, mbr failed.', PCHAR_EOS
+JUMP_INTO   DB      'ready to switch to loader.', PCHAR_EOS
+
+PADDING     TIMES   (512 - 2 - ($ - $$)) DB 0
+
+
+; 两字节的尾部校验数据
+    DB      0x55,   0xaa

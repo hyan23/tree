@@ -1,0 +1,20 @@
+// directories.txt
+// Author: hyan23
+// 2016.05.02
+//
+
+.s0: raw assembly
+.ss: structrued assembly
+(not scheme;D)
+
+bin: 二进制文件
+boot: 启动代码
+doc: 文档
+inc: 全局符号
+kernel: 内核
+make: 项目生成
+sft: 工具软件
+src: 源代码
+test: 测试代码
+TREE: 虚拟机
+usr: 用户代码

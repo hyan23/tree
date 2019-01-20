@@ -1,0 +1,84 @@
+; tree/boot/bits.r0
+; Author: hyan23
+; Date: 2016.06.09
+;
+
+; 初始化的全局位图
+
+%include "../boot/args.ic"
+
+[BITS 32]
+
+
+_BITS:
+                                                 ; TREE_GDT_FIXED >= 32
+%if (0 != TREE_GDT_FIXED % 32)
+    %error "Ensure TREE_GDT_FIXED % 32 = 0"
+%endif ; TREE_GDT_FIXED % 32 = 0
+                                                 ; TREE_GDT_BYTES >= 32
+%if (0 != TREE_GDT_BYTES % 32)
+    %error "Ensure TREE_GDT_BYTES % 32 = 0"
+%endif ; TREE_GDT_BYTES % 32 = 0
+
+gdt:
+    TIMES (TREE_GDT_FIXED / 8) DB 0xff
+    TIMES ((TREE_GDT_BYTES - 8 * TREE_GDT_FIXED) / 8) DB 0
+
+
+                                                 ; TREE_IDT_FIXED >= 32
+%if (0 != TREE_IDT_FIXED % 32)
+    %error "Ensure TREE_IDT_FIXED % 32 = 0"
+%endif ; TREE_IDT_FIXED % 32 = 0
+                                                 ; TREE_IDT_BYTES >= 32
+%if (0 != TREE_IDT_BYTES % 32)
+    %error "Ensure TREE_IDT_BYTES % 32 = 0"
+%endif ; TREE_IDT_BYTES % 32 = 0
+
+idt:
+    TIMES (TREE_IDT_FIXED / 8) DB 0xff
+    TIMES ((TREE_IDT_BYTES - 8 * TREE_IDT_FIXED) / 8) DB 0
+
+
+                                                 ; TREE_MEM_FIXED >= 32
+%if (0 != TREE_MEM_FIXED % 32)
+    %error "Ensure TREE_MEM_FIXED % 32 = 0"
+%endif ; TREE_MEM_FIXED % 32 = 0
+                                                 ; TREE_MEM_PAGED >= 32
+%if (0 != TREE_MEM_PAGED % 32)
+    %error "Ensure TREE_MEM_PAGED % 32 = 0"
+%endif ; TREE_MEM_PAGED % 32 = 0
+                                                 ; TREE_MEM_MIN >= 32
+%if (0 != TREE_MEM_MIN % 32)
+    %error "Ensure TREE_MEM_MIN % 32 = 0"
+%endif ; TREE_MEM_MIN % 32 = 0
+                                                 ; TREE_AVL_MEM >= 32
+%if (0 != TREE_AVL_MEM % 32)
+    %error "Ensure TREE_AVL_MEM % 32 = 0"
+%endif ; TREE_AVL_MEM % 32 = 0
+
+memory:                                          ; / 4k / 8-bit
+    TIMES (TREE_MEM_FIXED / 4 / 8) DB 0xff
+    TIMES ((TREE_AVL_MEM - TREE_MEM_PAGED - TREE_MEM_FIXED) \
+        * 1024 / TREE_MEM_MIN / 8) DB 0
+    TIMES (TREE_MEM_PAGED / 4 / 8) DB 0
+
+
+                                                 ; TREE_PROC_LI >= 32
+%if (0 != TREE_PROC_LI % 32)
+    %error "Ensure TREE_PROC_LI % 32 = 0"
+%endif ; TREE_PROC_LI % 32 = 0
+
+proc:
+    TIMES (TREE_PROC_LI    / 32) DB 0
+
+
+                                                 ; TREE_SYMBOL_LI >= 32
+%if (0 != TREE_SYMBOL_LI % 32)
+    %error "Ensure TREE_SYMBOL_LI % 32 = 0"
+%endif ; TREE_SYMBOL_LI % 32 = 0
+
+symbol:
+    TIMES (TREE_SYMBOL_LI / 8) DB 0
+
+                                                 ; Reserved
+PADDING TIMES (TREE_BITS_BYTES - ($ - _BITS)) DB 0xff

@@ -1,0 +1,227 @@
+; tree/kernel/exec.s0
+; Author: hyan23
+; Date: 2016.05.13
+;
+
+; [TREE]执行程序
+; 单任务环境使用。
+
+%include "../boot/gdt.ic"
+%include "../boot/absc.ic"
+%include "../kernel/private.ic"
+%include "../kernel/xfile.ic"
+%include "../kernel/exec.ic"
+%include "../inc/nasm/nasm.ic"
+%include "../inc/nasm/io/def0.ic"
+
+; header
+_TREE_LEN DD TREE_END
+
+; constant
+    THIS_SEL    EQU         EXEC_SEL
+    THIS_SEL0   EQU         EXEC_SEL0
+    THIS_SEL1   EQU         EXEC_SEL1
+    THIS_OFS    EQU         EXEC_OFS
+
+; export
+TREE_ABSSYM TREE_EXECUTE, tree_execute, THIS_SEL
+TREE_ABSSYM TREE_TERMINATE, tree_terminate, THIS_SEL
+
+; ss
+    save_ss     DW          THIS_SEL1           ; 保存存储調用幀栈的栈
+; esp
+    save_esp    DD          0xfff
+
+[BITS 32]
+
+
+tree_execute:
+
+    push ecx
+    push edx
+    push ds
+    push es
+
+    mov cx, DATA_SEL
+    mov ds, cx
+
+    TREE_ABSCALL TREE_XENV_LOAD                  ; 创建进程空间
+
+    cmp eax, LOAD_SUCCESS
+    jz .ldsuccess
+    cmp eax, LOAD_READ_FAULT
+    jz .ldreadfault
+    cmp eax, LOAD_INVALID
+    jz .ldinvalid
+    cmp eax, LOAD_OVERFLOW
+    jz .ldoverflow
+    cmp eax, LOAD_PROC_TAB_OVERFLOW
+    jz .ldprocof
+    cmp eax, LOAD_SYMBOL_TAB_OVERFLOW
+    jz .ldsymbolof
+
+.ldsuccess:
+    ; mov ebx, THIS_OFS + LOAD_SUCCEEDED
+    ; TREE_ABSCALL PUT_STR
+
+    TREE_ABSCALL TREE_XENV_LINK                  ; 符号链接
+    test eax, TREE_LOGICAL_TRUE
+    jz .lnfailed
+
+.lnsuccess:
+    ; mov ebx, THIS_OFS + LINK_SUCCEEDED
+    ; TREE_ABSCALL PUT_STR
+    cmp ebx, 0                                   ; 最高特权级才执行
+    mov eax, 0
+    jnz .ok
+
+    push ecx                                     ; 保护系统状态
+    push edx
+    push ebp
+    push esp
+    push esi
+    push edi
+    push ds
+    push es
+    push fs
+    push gs
+
+    mov eax, esp                                 ; 保护栈
+    mov dx, ss
+    mov esp, [ds:(THIS_OFS + save_esp)]          ; 調用幀栈
+    mov bx, [ds:(THIS_OFS + save_ss)]
+    mov ss, bx
+    push eax
+    push dx
+    mov [ds:(THIS_OFS + save_esp)], esp          ; 写回
+    mov dx, ss
+    mov [ds:(THIS_OFS + save_ss)], dx
+
+    TREE_LOCATE_PROC                             ; 定位到进程空间
+    mov ax, ds
+    mov es, ax
+                                                 ; 加载局部描述符表
+    lldt [es:TREE_PROC_PRIVATE_LDT_LOCATOR_OFS]
+    mov ax, [es:TREE_PROC_SEL_DATA_SEL_OFS]
+    mov bx, [es:TREE_PROC_SEL_STK_0_SEL_OFS]
+
+    mov ds, ax                                   ; 切换数据段
+    mov ss, bx                                   ; 切换栈
+                                                 ; 处理器不允许加载
+                                                 ;    特权级小于CPL的栈
+
+    mov esp, TREE_USR_STACK - 1
+
+    push es                                      ; 2 TOP
+
+    jmp far [es:ACCESS_SRC(TREE_XFILE_ENTRY_OFS)] ; 跳转到用户程序
+
+.terminal:
+    mov dx, DATA_SEL                             ; 还原栈
+    mov ds, dx
+
+    mov esp, [ds:(THIS_OFS + save_esp)]          ; 調用幀栈
+    mov dx, [ds:(THIS_OFS + save_ss)]
+    mov ss, dx
+    pop dx
+    pop edi
+    mov [ds:(THIS_OFS + save_esp)], esp          ; 写回
+    mov cx, ss
+    mov [ds:(THIS_OFS + save_ss)], cx
+    mov esp, edi
+    mov ss, dx
+
+    pop gs                                       ; 恢复状态
+    pop fs
+    pop es
+    pop ds
+    pop edi
+    pop esi
+    pop esp
+    pop ebp
+    pop edx
+    pop ecx
+
+    cmp ebx, TREE_EXEC_RET_COM                   ; 普通应用程序, 释放空间
+    jnz .retlib
+
+.retcom:
+    TREE_ABSCALL TREE_XENV_FREE
+    jmp near .ok
+
+.retlib:
+.ok:
+    mov ebx, eax
+    mov eax, TREE_LOGICAL_TRUE
+    jmp near .fin
+
+
+%macro PRINT_TEXT 1                              ; 打印信息
+
+    push ebx
+    mov ebx, THIS_OFS + %1
+    TREE_ABSCALL PUT_STR
+    pop ebx
+
+%endmacro ; PRINT_TEXT
+
+.ldreadfault:                                    ; 处理加载错误
+    PRINT_TEXT LDFAILED                          ; TODO: FREE
+    jmp near .procend
+.ldinvalid:
+    PRINT_TEXT LDINVALID
+    jmp near .procend
+.ldoverflow:
+    PRINT_TEXT LDOVERFLOW
+    jmp near .procend
+.ldprocof:
+    PRINT_TEXT LDPROC_OF
+    jmp near .procend
+.ldsymbolof:
+    PRINT_TEXT LDSYMBOL_OF
+    jmp near .procend
+
+.lnfailed:                                       ; 处理链接错误
+    PRINT_TEXT LINK_FAILED                       ; TODO: FREE
+.putlnerror:
+    mov ebx, THIS_OFS + link_reason              ; PUT_STR:ds:ebx
+    TREE_ABSCALL TREE_XENV_ERR
+    TREE_ABSCALL PUT_STR
+    mov cl, ASCLL_CR                             ; 没有自动换行
+    TREE_ABSCALL PUT_CHAR
+    mov cl, ASCLL_LF
+    TREE_ABSCALL PUT_CHAR
+
+.procend:
+    mov eax, TREE_LOGICAL_FALSE
+    mov ebx, -1
+
+.fin:
+    pop es
+    pop ds
+    pop edx
+    pop ecx
+
+    retf
+
+
+tree_terminate:
+    jmp near tree_execute.terminal
+
+
+; strings
+
+LDSUCCEEDED DB 'tree_xenv_load(), succeeded.\n', PCHAR_EOS
+LDFAILED DB 'tree_xenv_load(), read fault.\n', PCHAR_EOS
+LDINVALID DB 'tree_xenv_load(), no valid file.\n', PCHAR_EOS
+LDOVERFLOW DB 'tree_xenv_load(), memory overflow!\n', PCHAR_EOS
+LDPROC_OF DB 'tree_xenv_load(), proc tab overflow.\n', PCHAR_EOS
+LDSYMBOL_OF DB 'tree_xenv_load(), symbol tab overflow.\n', PCHAR_EOS
+
+LINK_SUCCEEDED DB 'tree_xenv_link(), succeeded!\n', PCHAR_EOS
+LINK_FAILED DB 'tree_xenv_link(), failed!\n', PCHAR_EOS
+
+link_reason TIMES LINK_ERR_LEN DB PCHAR_EOS
+
+
+TREE_END:

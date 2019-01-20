@@ -1,0 +1,69 @@
+; tree/kernel/debug.s0
+; Author: hyan23
+; Date: 2016.07.20
+;
+
+; 调试工具
+
+%include "../boot/absc.ic"
+
+
+TREE_DEBUG_PUT_NUM:
+
+    push ax
+    push cx
+
+    mov cl, '0'                                  ; print "0x"
+    TREE_ABSCALL PUT_CHAR
+    mov cl, 'x'
+    TREE_ABSCALL PUT_CHAR
+
+    mov cx, ax                                   ; 逐位分解
+    and cx, 0xf000
+    shr cx, 12
+    call near TREE_DEBUG_PUT_HEX
+
+    mov cx, ax
+    and cx, 0x0f00
+    shr cx, 8
+    call near TREE_DEBUG_PUT_HEX
+
+    mov cx, ax
+    and cx, 0x00f0
+    shr cx, 4
+    call near TREE_DEBUG_PUT_HEX
+
+    mov cx, ax
+    and cx, 0x000f
+    call near TREE_DEBUG_PUT_HEX
+
+    mov cl, ' '
+    TREE_ABSCALL PUT_CHAR
+
+    pop cx
+    pop ax
+
+    ret
+
+
+TREE_DEBUG_PUT_HEX:
+
+    push cx
+
+    cmp cl, 0x0a                                 ; 0 - 9, a - f
+    jnb    .hex
+    add cl, '0'
+    TREE_ABSCALL PUT_CHAR
+
+    jmp near .fin
+
+.hex:
+    sub cl, 0xa
+    add cl, 'a'
+    TREE_ABSCALL PUT_CHAR
+
+.fin:
+    pop cx
+
+    ret
+

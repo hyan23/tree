@@ -1,0 +1,18 @@
+; tree/inc/nasm/io/readisk.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+%ifndef _READISK_IC_
+%define _READISK_IC_
+
+; bool:eax readsec(uint28:eax:sector, uint32*:ds:ebx:buffer);
+    __TREE_IMPORT @readisk0, 'readsec', readsec
+
+; bool:eax readblock(uint28:eax:sector,
+;    uint32*:ds:ebx:buffer, uint32:ecx:bytes);
+    __TREE_IMPORT @readisk1, 'readblock', readblock
+
+
+
+%endif ; _READISK_IC_

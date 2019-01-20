@@ -1,0 +1,94 @@
+; tree/in/nasm/spin.ic
+; Author: hyan23
+; Date: 2016.07.19
+;
+
+; 自旋锁语法
+; 参数1: 锁标识, 参数2: 段选择子(非段选择器),
+;   参数3: 偏移量
+
+%ifndef _SPIN_IC_
+%define _SPIN_IC_
+
+    TREE_SPIN_BUSY  EQU     1
+    TREE_SPIN_FREE  EQU     0
+
+
+%macro TREE_SPIN_LOCK 1
+
+%1  DB  TREE_SPIN_FREE
+
+%endmacro ; TREE_SPIN_LOCK
+
+
+%macro __PRE__ 1                                 ; 前处理
+
+    push ax
+    push ds
+    mov ax, %1
+    mov ds, ax
+
+%endmacro ; __PRE__
+
+%macro __POST__ 0                                ; 后处理
+
+    pop ds
+    pop ax
+
+%endmacro ; __POST__
+
+
+%macro TREE_SPIN_INIT 2                          ; 初始化锁,
+                                                 ; 也可自行初始化为
+                                                 ; FREE。
+    __PRE__ %1
+    mov BYTE [ds:(%2)], TREE_SPIN_FREE
+    __POST__
+
+%endmacro ; TREE_SPIN_INIT
+
+
+%macro TREE_SPIN_WAIT 2                          ; 等待
+
+    __PRE__ %1
+.wait_FOR_%2:                                    ; 自旋
+    cmp BYTE [ds:(%2)], TREE_SPIN_BUSY
+    jz .wait_FOR_%2
+    __POST__
+
+%endmacro ; TREE_SPIN_WAIT
+
+
+%macro TREE_SPIN_IN 2                            ; 加锁
+
+    __PRE__ %1
+    mov BYTE [ds:(%2)], TREE_SPIN_BUSY
+    __POST__
+
+%endmacro ; TREE_SPIN_IN
+
+
+%macro TREE_SPIN_LEAVE 2                         ; 解锁
+
+    __PRE__ %1
+    mov BYTE [ds:(%2)], TREE_SPIN_FREE
+    __POST__
+
+%endmacro ; TREE_SPIN_LEAVE
+
+
+%macro TREE_SYNC_BEGIN 2                         ; 同步语法
+
+    TREE_SPIN_WAIT %1, %2
+    TREE_SPIN_IN %1, %2
+
+%endmacro ; TREE_SYNC_BEGIN
+
+%macro TREE_SYNC_END 2
+
+    TREE_SPIN_LEAVE %1, %2
+
+%endmacro ; TREE_SYNC_END
+
+
+%endif ; _SPIN_IC_

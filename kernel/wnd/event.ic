@@ -1,0 +1,19 @@
+; tree/kernel/wnd/event.ic
+; Author: hyan23
+; Date: 2016.08.04
+;
+
+%ifndef _EVENT_IC_
+%define _EVENT_IC_
+
+    TREE_EVENT_QUEUE_LIMIT          EQU     10
+    TREE_EVENT_CONTEXT_BYTES        EQU     33
+
+    TREE_EVENT_CONTEXT_TYPE_OFS     EQU     0
+    TREE_EVENT_CONTEXT_ATTACH_OFS   EQU     4 + \
+                            TREE_EVENT_CONTEXT_TYPE_OFS
+
+
+
+
+%endif ; _EVENT_IC_

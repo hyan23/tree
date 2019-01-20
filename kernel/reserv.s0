@@ -1,0 +1,24 @@
+; tree/kernel/reserv.s0
+; Author: hyan23
+; Date: 2016.06.27
+;
+
+%include "../boot/absc.ic"
+%include "../inc/nasm/nasm.ic"
+
+
+; header
+    _TREE_LEN    DD        TREE_END
+
+; constant
+    THIS_SEL    EQU        RESERV_SEL
+    THIS_OFS    EQU        RESERV_OFS
+
+
+; export
+
+[BITS 32]
+
+
+
+TREE_END:

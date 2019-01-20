@@ -1,0 +1,18 @@
+; tree/kernel/wnd/link.ic
+; Author: hyan23
+; Date: 2016.08.03
+;
+
+%ifndef _LINK_IC_
+%define _LINK_IC_
+
+    TREE_LINK_CONTEXT_BYTES         EQU     12
+
+    TREE_LINK_CONTEXT_LINK_OFS      EQU     0
+    TREE_LINK_CONTEXT_LOCK_OFS      EQU     2 + \
+                            TREE_LINK_CONTEXT_LINK_OFS
+
+
+
+
+%endif ; _LINK_IC_

@@ -1,0 +1,27 @@
+; tree/boot/bits.ic
+; Author: hyan23
+; Date: 2016.06.09
+;
+
+; 全局位图参考
+
+
+%ifndef _BITS_IC_
+%define _BITS_IC_
+
+%include "../boot/args.ic"
+
+    TREE_GDT_BITS_OFS   EQU     0
+
+    TREE_IDT_BITS_OFS   EQU     (TREE_GDT_BYTES / 8 / 8)
+
+    TREE_MEM_BITS_OFS   EQU     TREE_IDT_BITS_OFS + (TREE_IDT_BYTES / 8 / 8)
+
+    TREE_PROC_BITS_OFS  EQU     (TREE_MEM_BITS_OFS + TREE_MEM_FIXED / 4 / \
+        8 + (TREE_AVL_MEM - TREE_MEM_PAGED - TREE_MEM_FIXED) * 1024 / \
+        TREE_MEM_MIN / 8 + TREE_MEM_FIXED / 4 / 8)
+
+    TREE_SYMBOL_BITS_OFS EQU    (TREE_PROC_BITS_OFS + TREE_PROC_LI / 8)
+
+
+%endif ; _BITS_IC_

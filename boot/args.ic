@@ -1,0 +1,65 @@
+; tree/boot/args.ic
+; Author: hyan23
+; Date: 2016.06.03
+;
+
+; 全局配置文件
+
+
+%ifndef _ARGS_IC_
+%define _ARGS_IC_
+
+
+; 内存                                            ; (kb)
+    TREE_AVL_MEM        EQU     65536           ; 安装的总容量
+    TREE_MEM_PAGED      EQU     60416           ; 按页分配的
+    TREE_MEM_FIXED      EQU     1024            ; 前1024kb是静态的, 系统使用
+    TREE_MEM_MIN        EQU     32              ; (字节)最小单次分配
+                                                ; 以上数据必须能被32整除
+    TREE_MEM_BOUNDS     EQU     4               ; (页)分配模式界限, 请求的内存小于界限
+                                                ; 系统将采用小粒度分配, 否则, 采用
+                                                ; 大粒度(按页)分配, 推荐设置: 4 - 16
+                                                ; 如果TREE_MEM_MIN = 32,
+                                                ; 此值不应大于 32767
+                                                ; 计算方法 0xfffff * TREE_MEM_MIN \
+                                                ;     / 1024
+
+
+; 描述符表
+    TREE_GDT_BYTES      EQU     0x10000         ; GDT的大小
+    TREE_GDT_FIXED      EQU     32              ; 前32项是静态的, 系统使用
+                                                ; 以上数据必须能被32整除
+
+
+; 调用门选择字表大小
+    TREE_CALLGATE_SEL_TAB_BYTES     EQU     4608 ; 当前允许安装768个调用门
+                                                ; 以上数据必须能被6整除
+
+
+; 中断向量表
+    TREE_IDT_BYTES      EQU     0x10000         ; IGT的大小
+    TREE_IDT_FIXED      EQU     32              ; 前32项是静态的, 系统使用
+                                                ; 以上数据必须能被32整除
+
+
+; 位图
+    TREE_BITS_BYTES     EQU     0x10000         ; GBMP的大小
+                                                ; 以上数据必须能被32整除
+
+
+; 静态存储区
+    TREE_LIB_BYTES      EQU     0x10000         ; 区域容量
+                                                ; 以上数据必须能被32整除
+
+
+; 进程，符号
+    TREE_PROC_LI        EQU     256             ; 最多可创建的进程个数
+    TREE_SYMBOL_LI      EQU     3840            ; 最多可创建的符号个数
+                                                ; 最大: 65536
+                                                ; 以上数据必须能被32整除
+
+
+    TREE_ENABLE_GRAPHIC EQU     1               ; 启用图形系统
+
+
+%endif ; _ARGS_IC_

@@ -1,0 +1,166 @@
+; tree/boot/mbr32.s0
+; Author: hyan23
+; Date: 2016.06.04
+;
+
+; baser in 32-bit
+; 增加同步
+
+%include "../boot/gdt.ic"
+%include "../boot/absc.ic"
+%include "../inc/nasm/spin.ic"
+%include "../inc/nasm/nasm.ic"
+
+
+; header
+    _TREE_LEN DD TREE_END
+
+; constant                                ; 将覆盖0x7c00
+    THIS_SEL        EQU     BASER_SEL
+    THIS_SEL0       EQU     BASER_SEL0
+
+; export
+TREE_ABSSYM rd_sector, read_sector, THIS_SEL
+TREE_ABSSYM rd_block, read_block, THIS_SEL
+
+[BITS 32]
+
+
+; bool:eax read_sector(uint28:eax:sector,
+;    uint32*:ds:ebx:buffer);
+
+read_sector:
+
+    push ebx
+    push ecx
+    push edx
+
+    TREE_SYNC_BEGIN THIS_SEL0, read_sector_lock
+
+    mov ecx, eax
+
+    mov al, 1                                    ; 告诉硬盘本次操作一个扇区
+    mov dx, 0x1f2
+    out dx, al
+
+    mov eax, ecx
+
+    mov dx, 0x1f3
+    out dx, al                                   ; 写 0 - 7
+
+    shr eax, 8
+    mov dx, 0x1f4
+    out dx, al                                   ; 写 8 - 15
+
+    shr eax, 8
+    mov dx, 0x1f5
+    out dx, al                                   ; 写 16 - 23
+
+    shr eax, 8                                   ; 选择最高8位
+    and al, 0x0f                                 ; 清 28 - 31
+    or al, 0xe0                                  ; 使用 LBA 模式
+    mov dx, 0x1f6
+    out dx, al                                   ; 写 24 - 27
+
+    mov al, 0x20                                 ; 请求从硬盘读取数据
+    mov dx, 0x1f7
+    out dx, al
+
+    in al, dx                                    ; 询问有无错误
+    test al, 0x01
+    jnz .failed
+
+.wait:                                           ; 等待硬盘准备完成
+    in al, dx
+    and al, 0x88                                 ; 保留: 1000_1000
+    cmp al, 0x08
+    jnz .wait
+
+    mov ecx, 256                                 ; 准备读数据
+    mov dx, 0x1f0
+
+.readw:                                          ; 读一个扇区
+    in ax, dx
+    mov [ds:ebx], ax
+    add ebx, 2
+    loop .readw
+
+    mov eax, TREE_LOGICAL_TRUE                   ; 成功
+
+.fin:
+    TREE_SYNC_END THIS_SEL0, read_sector_lock
+
+    pop edx
+    pop ecx
+    pop ebx
+
+    retf
+
+.failed:
+    mov eax, TREE_LOGICAL_FALSE                  ; 失败
+    jmp near .fin
+
+
+; bool:eax read_block(uint28:eax:sector,
+;    uint32*:ds:ebx:buffer, uint32:ecx:bytes);
+
+read_block:
+
+    push ebx
+    push ecx
+    push edx
+
+    push eax
+
+    cmp ecx, 0x200                               ; 计算扇区数
+    ja .j                                        ; 数据量 > 512字节
+    mov ax, 1
+    jmp near .j0
+
+.j:
+    mov ax, cx                                   ; ecx -> dx:ax
+    shr ecx, 16
+    mov dx, cx
+
+    mov cx, 0x200
+    div cx
+
+    cmp dx, 0
+    jz .j0                                       ; 被整除
+    inc ax                                       ; 否则, 多读一个扇区
+
+.j0:
+    mov cx, ax                                   ; 最终结果
+
+    pop eax
+
+.read:                                           ; 读数据
+    mov edx, eax
+    call THIS_SEL:read_sector
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed
+    mov eax, edx
+    inc eax
+    add ebx, 0x200
+    loop .read
+
+.end:
+    mov eax, TREE_LOGICAL_TRUE
+    jmp near .fin
+
+.failed:
+    mov eax, TREE_LOGICAL_FALSE
+
+.fin:
+    pop edx
+    pop ecx
+    pop ebx
+
+    retf
+
+
+TREE_SPIN_LOCK read_sector_lock
+
+PADDING     TIMES   (512 - ($ - $$)) DB 0
+
+TREE_END:

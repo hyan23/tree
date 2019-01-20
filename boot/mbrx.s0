@@ -1,0 +1,383 @@
+; tree/boot/mbrx.s0
+; Author: hyan23
+; Date: 2016.04.30
+;
+
+; 扩展的主引导程序
+
+%include "../boot/boot.ic"
+%include "../boot/args.ic"
+%include "../boot/gdt.ic"
+%include "../boot/absc.ic"
+%include "../boot/LIB.ic"
+%include "../inc/nasm/nasm.ic"
+%include "../inc/nasm/io/def0.ic"
+
+; header
+_TREE_LEN DD TREE_END
+
+; constant
+    THIS_OFS        EQU     MBRX_OFS
+
+[BITS 16]
+
+
+%macro LOAD_X 2                                  ; 从硬盘读取
+                                                 ; 静态代码
+    mov eax, %1                                  ; (绝对定位的)
+    mov ebx, %2
+    TREE_ABSCALL0 0x7c10
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed0
+
+%endmacro ; LOAD_X
+
+; entry
+mbrx_start:
+    xor cx, cx
+    mov ds, cx
+                                                 ; 剩余的
+    LOAD_X BASEC_SEC, BASEC_OFS
+    LOAD_X MEMORY_SEC, MEMORY_OFS
+    LOAD_X LOADER_SEC, LOADER_OFS
+    LOAD_X LINKER_SEC, LINKER_OFS
+    LOAD_X EXEC_SEC, EXEC_OFS
+    LOAD_X EXTRA_SEC, EXTRA_OFS
+    LOAD_X RESERV_SEC, RESERV_OFS
+
+    mov ax, GDT_SEG                              ; 全局描述符表
+    mov ds, ax
+    xor ebx, ebx
+    mov eax, GDT_SEC
+    mov ecx, TREE_GDT_BYTES
+    TREE_ABSCALL0 READ_BLOCK
+
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed0
+
+    mov ax, BITS_SEG                             ; 全局位图
+    mov ds, ax
+    xor ebx, ebx
+    mov eax, BITS_SEC
+    mov ecx, TREE_BITS_BYTES
+    TREE_ABSCALL0 READ_BLOCK
+
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed0
+
+    mov ax, LIB_SEG                              ; 静态存储区
+    mov ds, ax
+    xor ebx, ebx
+    mov eax, LIB_SEC
+    mov ecx, TREE_LIB_BYTES
+    TREE_ABSCALL0 READ_BLOCK
+
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed0
+
+    jmp near .exchange
+
+.failed0:
+    mov bx, THIS_OFS + FATAL
+    TREE_ABSCALL0 0x7c16
+    jmp near .halt
+
+
+.exchange:                                       ; (0x7c00 - 0x7dff) <>
+    mov ax, 0x07c0                               ;    (0x7e00 - 0x7fff)
+    mov ds, ax                                   ; 即把baser 升级到32位代码
+    mov ax, MBR32_OFS
+    shr ax, 4
+    mov es, ax
+    xor si, si
+    xor di, di
+    mov cx, 0x200 / 2
+.s0:
+    mov ax, [ds:si]                              ; 交换word [ds:si], [es:di]
+    xchg ax, [es:di]
+    mov [ds:si], ax
+    inc si
+    inc si
+    inc di
+    inc di
+    loop .s0
+
+
+.Switchdisplay:
+%if (1 == TREE_ENABLE_GRAPHIC)
+
+    mov ax, 0x4f02                               ; 1024*768*8bit
+    mov bx, 0x4105
+    int 0x10
+
+%endif ; (1 == TREE_ENABLE_GRAPHIC)
+
+
+.SwitchIntoProtectedMode:
+
+; TODO: 进入保护模式, 开启分页。
+; 保护模式下, 内存在访问之前必须使用段描述符登记, 否则会产生非法访问异常中断,
+; 一个段描述符由8个字节构成, 描述符的结构如下, 高32位:
+; -------------------------------------------------------------------
+;  31    24 |23|22 |21| 20| 19    16 |15|14 13|12|11   8 |7        0 |
+; -------------------------------------------------------------------
+;  base24-31|G |D/B|L |AVL|limit16-19|P | DPL |S | TYPE  | base16-23 |
+; -------------------------------------------------------------------
+; 可见段基址和段界限字段是不连续的, 是兼容16位保护模式的需要, 低32位:
+; ------------------------------------------------------------------
+;| 31                          16  | 15                           0 |
+; -------------------------------------------------------------------
+;|           base 0 - 15           |            limit 0 - 15        |
+; ------------------------------------------------------------------
+; 1. TYPE 字段一共4位, 用来指示描述符的子类型, 对于数据段来说,
+;    它们分别是X, E, W, A位, (可执行, 扩展方向(1: 向下, 0: 向上), 可写, 已访问)
+;    对于代码段, 它们分别是X, C, R, A位。(可执行, 特权级依从, 可读, 已访问)
+; 2. S 位用来指定描述符的类型(Descriptor Type), 1: 代码段或数据段, 0: 系统段
+; 3. DPL 字段用来指定描述符的特权级(Descriptor Privilege Level),
+;    描述符特权级从低到高分别是, 0, 1, 2, 3。
+; 4. P 位是存在位(Present), 用于虚拟内存管理。
+; 5. AVL 位是软件可以使用的位(Available), 保留位。
+; 6. L 位是 64-bit 代码标识(64-bit Code Segment)。
+; 7. D/B 位是默认的操作数大小(Default Operating Size)或者默认的栈指针大小
+;    (Default Stack Pointer Size), 又或者上部边界标识(Upper Bound),
+;    用来兼容16位保护模式, 置 '1' 即可。
+; 8. G 位是粒度位(Granularity), 用来解释段界限的含义,
+;    1: 段界限以 4kb 为单位, 0: 段界限以 1byte 为单位。
+; 9. 我们用全局描述符寄存器来跟踪全局描述符表: GDTR, 结构如下:
+;    0 - 15: 边界(最大偏移值), 15 - 47: 线性基地址
+;    通过这个寄存器系统最多可以访问 2^16/8 即 8192 个描述符。
+;
+
+    xor cx, cx
+    mov ds, cx
+    lgdt [ds:(THIS_OFS + GDT)]                   ; 加载全局描述符表
+    lidt [ds:(THIS_OFS + IDT)]                   ; 加载全局中断向量表
+
+    in al, 0x92                                  ; 打开第21条地址线
+    or al, 0000_0010b
+    out 0x92, al
+; 0x92 端口结构:
+; 0x92^0: INIT_NOW, 0x92^1: ALT_A20_GATE
+; 0x92^2 - 0x92^7: reserved
+
+    cli                                          ; 必须关中断
+
+    mov eax, cr0                                 ; 置PE位, 进入保护模式
+    or eax, 1
+    mov cr0, eax
+
+    jmp DWORD MBRX_SEL:.flush                    ; 执行远跳转, 清空流水线7
+                                                 ; 并且串行化处理器
+[BITS 32]
+.flush:
+
+
+; 保护模式下, 6个段寄存器CS, DS, ES, SS, FS, GS叫做段选择器, 引用一个段时,
+;    传送给段选择器的数据是段选择子, 它的结构如下:
+;    0 - 1: RPL, (请求特权级), 2: TI(描述符表指示器, 1: LDT, 0: GDT),
+;    3 - 15: 描述符索引。
+
+    mov ax, MBRX_SEL0                            ; 刷新数据段和栈
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ax, DATA0_SEL
+    mov ss, ax
+
+; 开启分页。
+; (不再使用分页, 2016.06.28按)
+    jmp near .nopaging
+
+;     以下是页目录项和页表项的格式, 在页目录表和页表中, 只保存了页表或物理地址的高20位,
+; 因为, 页表或页的物理地址, 都要求必须是4kb对齐的, 所以可以不关心其低12位。
+; --------------------------------------------------------------------
+; 31                               12 11   9 8 7 6 5  4   3   2 1  0 |
+; --------------------------------------------------------------------
+;         页表物理地址(12 - 31)        |  AVL |G|0|D|A|PCD|PWT|US|RW|P|
+; --------------------------------------------------------------------
+; 31                               12 11   9 8  7  6 5  4   3   2 1  0|
+; --------------------------------------------------------------------
+;          页物理地址(12 - 31)        |  AVL |G|PAT|D|A|PCD|PWT|US|RW|P|
+; --------------------------------------------------------------------
+
+; 1. P(Present)是存在位, 为'1'时, 表示页表或页在内存中, 否则, 创建或从磁盘换入。
+; 2. RW(Read/Write)是读/写位, 位'0'时表示这个页只能读取, 为'1'时, 可读可写。
+; 3. US(User/Supervisor)是用户/管理位, 为'1'时, 允许所有特权级别访问, 位'0'时,
+;    只允许特权级别为'0', '1', '2' 的程序访问。
+; 4. PWT(Page-Level Write-Through)是页级通写位, 和高速缓存有关。
+; 5. PCD(Page-Level Cache-Disable)是页级高速缓存禁止位, 和高速缓存有关。
+; 6. A(Accessed)是访问位, 由处理器固件管理, 可用于操作系统统计页的使用频率。
+; 7. D(Dirty)是脏位, 由处理器固件管理, 表示该页是否被写过数据。
+; 8. PAT(Page Attribute Table)是页属性表支持位, 涉及更复杂的分页系统。
+; 9. G(Global)是全局位, 用来指示该页是否是全局性质的, 如果页是全局的, 那么他将在
+;    高速缓存中一直保存。
+; 10. AVL(Available)是软件可以使用的部分。
+
+    xor ebx, ebx                                 ; 创建内核页目录表
+    mov ecx, 0x1000
+    TREE_ABSCALL ALLOC_MEMORY0
+    cmp ax, NUL_SEL
+    jz .failed
+
+    mov ds, ax                                   ; ZEROMEMORY
+    mov es, ax
+    xor ebx, ebx
+    TREE_ABSCALL ZEROMEMORY
+
+    mov cx, ds
+    TREE_ABSCALL GET_GDT_DESCRIPTOR
+    TREE_ABSCALL GET_DES_PROPERTY
+
+    push eax                                     ; 目录基址: eax
+    or eax, 0x00000103                           ; 固定项: 0001_0000_0001b
+
+    mov [es:0xffc], eax                          ; 将页目录表写入页目录表最后一项
+                                                 ; 用于管理页目录表
+                                                 ; 这将导致浪费高端4MB物理空间。
+
+    xor ebx, ebx                                 ; 创建一个内核页表
+    mov ecx, 0x1000
+    TREE_ABSCALL ALLOC_MEMORY0
+    cmp ax, NUL_SEL
+    jz .failed
+
+    mov ds, ax                                   ; ZEROMEMORY
+    xor ebx, ebx
+    TREE_ABSCALL ZEROMEMORY
+
+    xor eax, eax                                 ; 初始化页表
+    xor ebx, ebx                                 ; 填写内核空间映射
+    mov ecx, 256                                 ; 内核占用ecx个页
+    or eax, 0x00000003
+.initpagetab:
+    mov [ds:(4 * ebx)], eax
+    add eax, 0x1000
+    inc ebx
+    loop .initpagetab
+
+    mov cx, ds                                   ; 登记至目录第一项
+    TREE_ABSCALL GET_GDT_DESCRIPTOR
+    TREE_ABSCALL GET_DES_PROPERTY
+    or eax, 0x00000103
+
+    mov [es:0], eax
+
+; 页表创建完毕, 现在可以将页目录基址传送到CR3寄存器。
+; CR3寄存器布局如下:
+; -----------------------------------------------------------------------
+; 31                                       12 11          5 4   3  2   0 |
+; -----------------------------------------------------------------------
+;            页目录物理基地址12 - 31            |            |PCD|PWT|     |
+; -----------------------------------------------------------------------
+
+    pop eax
+    mov cr3, eax
+
+; 接下来开启页功能
+; 控制寄存器CR0的最高位, 也就是位31, 是PG(Page)位, 用于开启或关闭页功能
+
+    mov eax, cr0
+    or eax, 0x80000000
+    mov cr0, eax
+
+; 从这一刻开始, 段部件产生的线性地址就不是真正的物理地址, 需要经过页部件的转换,
+;    才能得到真正的物理地址。
+
+    mov ax, DATA_SEL                             ; 测试一下开启页部件的情况下
+    mov ds, ax                                   ; 系统的工作情况
+    mov ebx, THIS_OFS + FAILED
+    TREE_ABSCALL PUT_STR
+
+
+.nopaging:
+    TREE_ABSCALL TREE_XENV_INIT                  ; 初始化执行环境
+    test eax, TREE_LOGICAL_TRUE
+    jz .failed
+
+
+%macro LOAD_LIB 2
+
+    mov eax, %1
+    mov ebx, %2                                  ; 以特权级%2执行
+    TREE_ABSCALL TREE_EXECUTE
+    test eax, TREE_LOGICAL_TRUE                  ; 执行失败。
+    jz .failed
+    cmp ebx, 0                                   ; 代码失败。
+    jnz .failed
+
+%endmacro ; LOAD_LIB
+
+                                                 ; 由于系统尚未初始化完成，
+                                                 ; 在这里加载的库（特权级3）
+                                                 ; 无法执行初始化过程。
+
+                                                 ; 安装:
+    LOAD_LIB LIBINT0_SEC, 0                      ; 中断和异常
+    LOAD_LIB LIBGATE_SEC, 0                      ; 安装调用门
+    LOAD_LIB LIBAGENT_SEC, 3                     ; 调用门代理
+    LOAD_LIB LIBTASK0_SEC, 0                     ; 任务管理器
+    LOAD_LIB LIBTASK_SEC, 3                      ; 用户态。
+
+    LOAD_LIB LIBSTRING_SEC, 3                    ; utility
+    LOAD_LIB LIBMATH_SEC, 3
+    LOAD_LIB LIBRAND_SEC, 3
+    LOAD_LIB LIBSPIN_SEC, 3
+
+    LOAD_LIB LIBTIME_SEC, 3                      ; 时间
+
+    LOAD_LIB LIBKBD0_SEC, 0                      ; 键盘
+    LOAD_LIB LIBKBD_SEC, 3
+    LOAD_LIB LIBMOUSE0_SEC, 0                    ; 鼠标
+    LOAD_LIB LIBMOUSE_SEC, 3
+
+    LOAD_LIB LIBCONIO_SEC, 3                     ; i/o
+    LOAD_LIB LIBREADISK_SEC, 3
+    LOAD_LIB LIBWRDISK_SEC, 3
+
+    LOAD_LIB LIBARRAY_SEC, 3                     ; 容器
+    LOAD_LIB LIBLINKED_SEC, 3
+    LOAD_LIB LIBQUEUE_SEC, 3
+    LOAD_LIB LIBSTACK_SEC, 3
+
+    LOAD_LIB LIBGRAPHIC0_SEC, 0                  ; 图形
+    LOAD_LIB LIBGRAPHIC_SEC, 3
+    LOAD_LIB LIBTEXTURE_SEC, 3
+    LOAD_LIB LIBFONT_SEC, 3
+
+                                                 ; 启动内核任务
+    LOAD_LIB LIBTREE_SEC, 0
+
+.fin:
+    mov ebx, HALTED                              ; 停机
+    TREE_ABSCALL PUT_STR
+
+.halt:
+    cli
+.j:    hlt
+    jmp .j
+
+
+.failed:
+    mov ebx, FAILED
+    TREE_ABSCALL PUT_STR
+    jmp near .fin
+
+
+; 数据
+
+FATAL DB 'fatal error, system halted.', PCHAR_EOS
+FAILED DB 'load runtime failed.\n', PCHAR_EOS
+HALTED DB 'system halted.\n', PCHAR_EOS
+
+
+GDT:                                             ; GDT数据
+    DW TREE_GDT_BYTES - 1
+    DD GDT_OFS
+
+IDT:                                             ; IDT数据
+    DW TREE_IDT_BYTES - 1
+    DD IDT_OFS
+
+
+TREE_END:

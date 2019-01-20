@@ -1,0 +1,72 @@
+; tree/inc/nasm/import.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+; 导入符号的宏
+
+%ifndef _IMPORT_IC_
+%define _IMPORT_IC_
+
+%include "../kernel/private.ic"
+
+
+%macro ___TREE_IPT_LIB_BEGIN_ 0
+
+    %ifndef __IPT_LIB_BEGIN
+        %define __IPT_LIB_BEGIN
+        _IPT_LIB_BEGIN:
+    %endif ; __IPT_LIB_BEGIN
+
+%endmacro ; ___TREE_IPT_LIB_BEGIN_
+
+%define ___TREE_IPT_LIB_END_ _IPT_LIB_END:
+
+
+%macro __TREE_LIB 3                              ; 导入库
+    LIB_%1:                                      ; 导入序号
+    ._ipt_begin:
+        .LIB_NAME DB %2                          ; 导入库名称
+    ._ipt_name_end:                              ; 自动追加0
+        .PADDING TIMES (TREE_IPT_NAME_LEN - \
+            (._ipt_name_end - ._ipt_begin)) DB 0
+        .LIB_VER DD %3                           ; 导入库版本(重要)
+    ._ipt_end:
+        .RESERVED TIMES (TREE_IPT_ITEM_LEN - \
+            (._ipt_end - LIB_%1)) DB 0           ; 保留
+
+%endmacro ; __TREE_LIB
+
+
+%macro ___TREE_IPT_TAB_BEGIN_ 0
+
+    %ifndef __IPT_TAB_BEGIN
+        %define __IPT_TAB_BEGIN
+        _IPT_TAB_BEGIN:
+    %endif ; __IPT_TAB_BEGIN
+
+%endmacro ; ___TREE_IPT_TAB_BEGIN_
+
+%define ___TREE_IPT_TAB_END_ _IPT_TAB_END:
+
+
+%macro __TREE_IMPORT 3 ; 导入符号
+
+    IPT_%1:                                      ; 导入序号
+    ._ipt_begin:
+        .IPT_NAME DB %2                          ; 符号名
+    ._ipt_name_end:                              ; 自动追加0
+        .PADDING TIMES (TREE_IPT_NAME_LEN - \
+            (._ipt_name_end - ._ipt_begin)) DB 0
+        %3:                                      ; 符号访问标号
+        .IPT_OFS  DD        0x0000               ; 符号偏移, 由链接器填写
+        .IPT_BASE DW        0x0000               ; 符号基址, 由链接器填写
+        .IPT_PROC DW        0x0000               ; 进程空间, 由链接器填写
+    ._ipt_end:
+        .RESERVED TIMES (TREE_IPT_ITEM_LEN - \
+        (._ipt_end - IPT_%1)) DB        0        ; 保留
+
+%endmacro ; __TREE_IMPORT
+
+
+%endif ; _IMPORT_IC_

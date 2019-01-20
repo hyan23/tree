@@ -1,0 +1,24 @@
+; tree/src/nasm/utility/queue.ic
+; Author: hyan23
+; Date: 2016.07.23
+;
+
+; utility/queue
+
+%ifndef _QUEUE0_IC_
+%define _QUEUE0_IC_
+
+    TREE_QUEUE_CONTEXT_BYTES            EQU     32
+    TREE_QUEUE_DEFAULT_CAPACITY         EQU     128
+    TREE_QUEUE_DEFAULT_INCREMENT        EQU     32
+
+    TREE_QUEUE_CONTEXT_SEL_OFS          EQU     0
+    TREE_QUEUE_CONTEXT_GRADING_OFS      EQU     2 + \
+                    TREE_QUEUE_CONTEXT_SEL_OFS      ;reserved
+    TREE_QUEUE_CONTEXT_INDEX_OFS        EQU     4 + \
+                    TREE_QUEUE_CONTEXT_GRADING_OFS
+    TREE_QUEUE_CONTEXT_CAPACITY_OFS     EQU     4 + \
+                    TREE_QUEUE_CONTEXT_INDEX_OFS
+
+
+%endif ; _QUEUE0_IC_

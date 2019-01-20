@@ -1,0 +1,36 @@
+; tree/inc/nasm/utility/stack.ic
+; Author: hyan23
+; Date: 2016.08.01
+;
+
+; utility/stack
+
+%ifndef _STACK_IC_
+%define _STACK_IC_
+
+; uint16:ax:stack StackCreate(void);
+    __TREE_IMPORT @stack0, 'StackCreate', StackCreate
+
+; void StackDestroy(ds:stack);
+    __TREE_IMPORT @stack1, 'StackDestroy', StackDestroy
+
+; uint32:eax StackGetCount(ds:stack);
+    __TREE_IMPORT @stack2, 'StackGetCount', StackGetCount
+
+; bool:eax StackEmpty(ds:stack);
+    __TREE_IMPORT @stack3, 'StackEmpty', StackEmpty
+
+; void StackClear(ds:stack);
+    __TREE_IMPORT @stack4, 'StackClear', StackClear
+
+; bool:eax StackPushBack(ds:stack, uint32:eax:_E);
+    __TREE_IMPORT @stack5, 'StackPushBack', StackPushBack
+
+; uint32:eax StackGetBack(ds:stack);
+    __TREE_IMPORT @stack6, 'StackGetBack', StackGetBack
+
+; void StackPopBack(ds:stack);
+    __TREE_IMPORT @stack9, 'StackPopBack', StackPopBack
+
+
+%endif ; _STACK_IC_

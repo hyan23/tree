@@ -1,0 +1,24 @@
+; tree/kernel/xfile.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+; [TREE]可执行文件头结构数据规范
+
+%ifndef _XFILE_IC_
+%define _XFILE_IC_
+
+    TREE_XFILE_HEAD_LEN             EQU            64
+    TREE_XFILE_NAME_LEN             EQU            20
+
+    TREE_XFILE_MAGIC_OFS            EQU            0
+    TREE_XFILE_NAME_OFS             EQU            4
+    TREE_XFILE_VER_OFS              EQU            8
+    TREE_XFILE_LEN_OFS              EQU            12
+    TREE_XFILE_ENTRY_OFS            EQU            16
+    TREE_XFILE_CODE_OFS             EQU            22
+    TREE_XFILE_DATA_OFS             EQU            28
+    TREE_XFILE_TAB_OFS              EQU            36
+
+
+%endif ; _XFILE_IC_

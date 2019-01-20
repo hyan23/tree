@@ -1,0 +1,128 @@
+; tree/kernel/private.ic
+; Author: hyan23
+; Date: 2016.05.13
+;
+
+; 执行环境私有数据
+
+
+%ifndef _PRIVATE_IC_
+%define _PRIVATE_IC_
+
+%include "../boot/LIB.ic"
+
+
+; 进程
+    TREE_INVALID_PID            EQU         0       ; 无效用户进程号
+                                                    ; (内核使用)
+
+; 用户栈
+    TREE_USR_STACK              EQU         4096    ; 大小(字节)
+
+
+; 进程控制块
+    TREE_PROC_BLOCK             EQU         2048    ; 大小(字节)
+
+; 项
+    TREE_PROC_LDT_SIZE          EQU         1024    ; 局部描述符表
+    TREE_PROC_SEL_SIZE          EQU         256     ; 局部选择子
+    TREE_PROC_DEPEND_SIZE       EQU         256     ; 进程依赖表
+    TREE_PROC_PRIVATE_SIZE      EQU         512     ; 进程私有数据
+
+; 数据结构
+    TREE_PROC_BLOCK_OFS         EQU         4 * TREE_USR_STACK - 1
+    TREE_PROC_LDT_OFS           EQU         TREE_PROC_BLOCK_OFS
+    TREE_PROC_SEL_OFS           EQU         TREE_PROC_LDT_SIZE + TREE_PROC_LDT_OFS
+    TREE_PROC_DEPEND_OFS        EQU         TREE_PROC_SEL_SIZE + TREE_PROC_SEL_OFS
+    TREE_PROC_PRIVATE_OFS       EQU         TREE_PROC_DEPEND_SIZE + \
+                                        TREE_PROC_DEPEND_OFS
+; LDT
+    TREE_PROC_LDT_CODE_DES_OFS      EQU     TREE_PROC_LDT_OFS
+    TREE_PROC_LDT_DATA_DES_OFS      EQU     8 + TREE_PROC_LDT_CODE_DES_OFS
+    TREE_PROC_LDT_STK_3_DES_OFS     EQU     8 + TREE_PROC_LDT_DATA_DES_OFS
+    TREE_PROC_LDT_STK_2_DES_OFS     EQU     8 + TREE_PROC_LDT_STK_3_DES_OFS
+    TREE_PROC_LDT_STK_1_DES_OFS     EQU     8 + TREE_PROC_LDT_STK_2_DES_OFS
+    TREE_PROC_LDT_STK_0_DES_OFS     EQU     8 + TREE_PROC_LDT_STK_1_DES_OFS
+
+; SEL
+    TREE_PROC_SEL_CODE_SEL_OFS      EQU     TREE_PROC_SEL_OFS
+    TREE_PROC_SEL_DATA_SEL_OFS      EQU     2 + TREE_PROC_SEL_CODE_SEL_OFS
+    TREE_PROC_SEL_STK_3_SEL_OFS     EQU     2 + TREE_PROC_SEL_DATA_SEL_OFS
+    TREE_PROC_SEL_STK_2_SEL_OFS     EQU     2 + TREE_PROC_SEL_STK_3_SEL_OFS
+    TREE_PROC_SEL_STK_1_SEL_OFS     EQU     2 + TREE_PROC_SEL_STK_2_SEL_OFS
+    TREE_PROC_SEL_STK_0_SEL_OFS     EQU     2 + TREE_PROC_SEL_STK_1_SEL_OFS
+
+; 私有数据
+    TREE_PROC_PRIVATE_LDT_INDEX_OFS     EQU     TREE_PROC_PRIVATE_OFS
+    TREE_PROC_PRIVATE_LDT_LOCATOR_OFS   EQU     2 + \
+                                TREE_PROC_PRIVATE_LDT_INDEX_OFS
+                                                    ; 全局代码
+    TREE_PROC_PRIVATE_GC_SEL_OFS        EQU     2 + \
+                                TREE_PROC_PRIVATE_LDT_LOCATOR_OFS
+                                                    ; 全局数据
+    TREE_PROC_PRIVATE_GD_SEL_OFS        EQU     2 + \
+                                TREE_PROC_PRIVATE_GC_SEL_OFS
+                                                 ; tss
+    TREE_PROC_PRIVATE_TSS_SEL_OFS       EQU    2 + \
+                                TREE_PROC_PRIVATE_GD_SEL_OFS
+
+; 进程前数据
+    TREE_PROC_FRONT_PART        EQU     4 * TREE_USR_STACK + TREE_PROC_BLOCK
+
+%define ACCESS_SRC(__pos) (TREE_PROC_FRONT_PART + (__pos) - 1)
+
+
+; 重定位
+    TREE_IPT_NAME_LEN           EQU         20      ; 符号长度: 15
+    TREE_IPT_ITEM_LEN           EQU         32      ; 导入表条目长度
+    TREE_XPT_NAME_LEN           EQU         20      ; 符号长度: 15
+    TREE_XPT_ITEM_LEN           EQU         32      ; 导出表条目长度
+
+
+; 进程表
+    TREE_PROC_TAB_LEN           EQU         32
+
+; 数据结构
+    TREE_PTB_PID_OFS            EQU         0
+    TREE_PTB_DEP_OFS            EQU         2
+    TREE_PTB_NAME_OFS           EQU         3
+    TREE_PTB_VER_OFS            EQU         TREE_XFILE_NAME_LEN + \
+                                    TREE_PTB_NAME_OFS
+    TREE_PTB_SEL_OFS            EQU         4 + TREE_PTB_VER_OFS
+
+; 符号表
+    TREE_SYMBOL_TAB_LEN         EQU         32
+
+; 数据结构
+    TREE_STB_PID_OFS            EQU         0
+    TREE_STB_NAME_OFS           EQU         2
+    TREE_STB_OFS_OFS            EQU         TREE_XPT_NAME_LEN + \
+                                    TREE_STB_NAME_OFS
+    TREE_STB_SEL_OFS            EQU         4 + TREE_STB_OFS_OFS
+
+
+; cx: pid
+
+%macro TREE_LOCATE_PROC 0
+
+    pusha
+
+    mov ax, LIB_SEL                              ; 定位到进程表
+    mov ds, ax
+    mov ax, [ds:TREE_LIB_PROCTAB_OFS]
+    mov ds, ax
+
+    dec cx                                       ; pid 从1开始
+    mov ax, TREE_PROC_TAB_LEN
+    mul cx                                       ; 表内偏移
+    add ax, TREE_PTB_SEL_OFS                     ; 读SEL 字段
+    mov bx, ax
+    mov ax, [ds:bx]
+    mov ds, ax                                   ; 加载
+
+    popa
+
+%endmacro ; TREE_LOCATE_PROC
+
+
+%endif ; _PRIVATE_IC_

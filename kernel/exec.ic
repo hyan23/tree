@@ -1,0 +1,19 @@
+; tree/kernel/exec.ic
+; Author: hyan23
+; Date: 2016.07.02
+;
+
+; 单线程执行内核程序或加载库
+
+
+%ifndef _EXEC_IC_
+%define _EXEC_IC_
+
+    TREE_EXEC_RET_COM       EQU         0
+    TREE_EXEC_RET_LIB       EQU         1
+
+
+
+
+
+%endif ; _EXEC_IC_

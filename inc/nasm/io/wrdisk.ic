@@ -1,0 +1,11 @@
+; tree/inc/nasm/io/wrdisk.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+%ifndef _WRDISK_IC_
+%define _WDISK_IC_
+
+
+
+%endif ; _WRDISK_IC_

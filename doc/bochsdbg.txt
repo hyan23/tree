@@ -1,0 +1,41 @@
+// hyan23編輯於2016.05.01
+// bochsdbg调试技术
+//
+
+s(step): 单步执行
+c(continue): 持续执行, 直到断点
+b(break) <绝对内存地址>: cs:ip断点
+r(register): 显示通用寄存器的值
+sreg(segment register): 显示段寄存器内容
+creg(control register): 显示控制寄存器的内容
+n(next): 跳过由cx控制的迭代, 或过程调用
+u</ n> <address>: 反汇编从address开始的n条指令
+info [eflags]: 查看标志寄存器内容
+info [gdt/ldt]: 查看全局描述符表/局部描述符表
+
+x /nuf [addr] 显示线性地址（Linear Address）的内容
+xp /nuf [addr] 显示物理地址（Physical Address）的内容
+
+参数 n 显示的单元数
+参数 u 每个显示单元的大小，u 可以是下列之一：
+
+	b BYTE
+	h WORD
+	w DWORD
+	g DWORD64
+
+注意: 这种命名法是按照 GDB 习惯的，而并不是按照 intel 的规范。
+
+f 显示格式，f 可以是下列之一：
+
+	x 按照十六进制显示
+	d 十进制显示
+	u 按照无符号十进制显示
+	o 按照八进制显示
+	t 按照二进制显示
+	c 按照字符显示
+
+	n、f、u是可选参数，如果不指定，则u默认是w，f 默认是x。如果前面使用过x或
+者xp命令，会按照上一次的x或者xp命令所使用的值。n默认为1。addr 也是一个
+可选参数，如果不指定，addr是0，如过前面使用过x或者xp命令，指定了n = i，
+则再次执行时n默认为i + 1。

@@ -1,0 +1,47 @@
+; tree/inc/nasm/io/conio.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+%ifndef _CONIO_IC_
+%define _CONIO_IC_
+
+; void putchar(char:cl:ch);
+    __TREE_IMPORT @conio0, 'putchar', putchar
+
+; void puts(uint32*:ds:ebx:szstr);
+    __TREE_IMPORT @conio1, 'puts', puts
+
+; void puts0(uint32*:ds:ebx:szstr);            ; extra '\n'
+    __TREE_IMPORT @conio2, 'puts0', puts0
+
+; void putn(uint32:eax:n);
+    __TREE_IMPORT @conio6, 'putn', putn
+
+; void putbcd(uint8:cl:n);
+    __TREE_IMPORT @conio7, 'putbcd', putbcd
+
+; void setcolor(uint8:cl:color);
+    __TREE_IMPORT @conio25, 'setcolor', setcolor
+
+; void clrrow(uint8:al:row);
+    __TREE_IMPORT @conio24, 'clrrow', clrrow
+
+; void clrscr(void);
+    __TREE_IMPORT @conio4, 'clrscr', clrscr
+
+; void gotoxy(uint8:dh:x:(0 - 24), uint8:dl:y:(0 - 79));
+    __TREE_IMPORT @conio5, 'gotoxy', gotoxy
+
+
+; char:cl getchar(void);
+    __TREE_IMPORT @conio20, 'getchar', getchar
+
+; char:cl getchar0(void)                        ; including ctrl word
+    __TREE_IMPORT @conio21, 'getchar0', getchar0
+
+; uint32:eax gets(uint32*:ds:ebx:dest, uint32:ecx:bufsize)
+    __TREE_IMPORT @conio22, 'gets', gets
+
+
+%endif ; _CONIO_IC_

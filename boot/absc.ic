@@ -1,0 +1,323 @@
+; tree/boot/absc.ic
+; Author: hyan23
+; Date: 2016.06.03
+;
+
+; 这个文件用于实现实模式和保护模式最高权限下的间接远调用, 使用宏以及
+;   目标代码块的简单格式的配合计算出调用地址(参考的常量)。
+; 这些代码并不是所有都可以被用户程序使用, 若要添加代理, 参看
+;   tree/kernel/agent.ss。
+; Support absolute address procedure call under
+;   protected mode(Indirectly)
+
+%ifndef _ABSC_IC_
+%define _ABSC_IC_
+
+%include "../boot/boot.ic"
+%include "../boot/gdt.ic"
+
+
+; 在静态加载的代码文件中使用这个宏以导出符号(32位)。
+; %1: specifier, %2: entry（Procedure Label),
+;    %3: sel, We Do No Checking
+
+%macro TREE_ABSSYM 3
+
+    __%1 DD %2
+    DW %3
+
+%endmacro ; TREE_ABSSYM
+
+; 在静态加载的代码文件中使用这个宏以导出符号(16位)。
+; %1: specifier, %2: entry（Procedure Label),
+;    %3: [seg], We Do No Checking
+
+%macro TREE_ABSSYM0 3
+
+    %1 DW %2
+    DW %3
+    DW 0                                         ; Padding
+
+%endmacro ; TREE_ABSSYM0
+
+
+; 使用这个宏完成一次对静态例程的间接远调用(32位)。CPL = 0
+; %1: specifier, For Locating Procedure
+; Do Not Use [GS] For Transmitting Parameter OR Returning
+
+%macro TREE_ABSCALL 1
+
+    push gs
+
+    push ax
+    mov ax, DATA_SEL
+    mov gs, ax
+    pop ax
+    call far [gs:%1]
+
+    pop gs
+
+%endmacro ; TREE_ABSCALL
+
+
+; 使用这个宏完成一次对静态例程的间接远调用(16位)。
+
+%macro TREE_ABSCALL0 1
+
+    push gs
+
+    push ax
+    xor ax, ax
+    mov gs, ax
+    pop ax
+    call far [gs:%1]
+
+    pop gs
+
+%endmacro ; TREE_ABSCALL0
+
+
+; 计算出静态代码中导出符号的地址, 参数1: 代码块加载地址, 参数2: 符号序号
+%define ABS_ENTRY(_ORG, _N) (4 + _ORG + 6 * _N)
+
+
+; 以下是这些静态例程的声明。
+
+; bool:eax READ_SECTOR(uint28:eax:sec, uint32*:ds:ebx:buf);
+    READ_SECTOR         EQU         ABS_ENTRY(BASER_OFS, 0)
+
+
+; bool:eax READ_BLOCK(uint28:eax:sec, uint32*:ds:ebx:buf,
+;    uint32:ecx:bytes);
+; Read ecx bytes to specified memories(buffer)
+    READ_BLOCK          EQU         ABS_ENTRY(BASER_OFS, 1)
+
+
+
+; void PUT_CHAR(char:cl:ch);
+; Put a character to standard output device(Screen),
+;   update cursor or roll screen(If necessary)
+    PUT_CHAR        EQU         ABS_ENTRY(BASEC_OFS,  0)
+
+
+; void PUT_STR(uint32*:ds:ebx szstr);
+; in: A string with tail(PCHAR_EOS), escape sequences like
+;    '\\', '\n' were well supported
+    PUT_STR         EQU         ABS_ENTRY(BASEC_OFS, 1)
+
+
+; void SET_COLOR(uint8:cl:color);
+; 7   <->   0
+; F RGB I RGB
+    SET_COLOR       EQU         ABS_ENTRY(BASEC_OFS, 2)
+
+
+; void CLR_ROW(uint8:al:row);
+    CLR_ROW         EQU         ABS_ENTRY(BASEC_OFS, 3)
+
+
+; void CLR_SCR(void);
+    CLR_SCR         EQU         ABS_ENTRY(BASEC_OFS, 4)
+
+
+; void GOTO_XY(uint8:ch:X, uint8:cl:Y);
+; Cursor Posision(0, 0) - (24, 79)
+    GOTO_XY         EQU         ABS_ENTRY(BASEC_OFS, 5)
+
+
+
+; void MEMCPY(uint32*:ds:esi:src, uint32*es:edi:dst,
+;    uint32:ecx:bytes);
+    MEMCPY          EQU         ABS_ENTRY(MEMORY_OFS, 0)
+
+
+; void ZEROMEMORY(uint32*ds:ebx:dst, uint32:ecx:bytes);
+    ZEROMEMORY      EQU         ABS_ENTRY(MEMORY_OFS, 1)
+
+
+; uint16:ax ALLOC_MEMORY(uint7:ebx:type, uint32:ecx:bytes);
+; in: ebx: type, ecx: bytes to apply
+; ret: ax: Valid Selector If Succeeded
+
+    ALLOC_MEMORY    EQU         ABS_ENTRY(MEMORY_OFS, 2)
+
+
+; allocting Data, type no more needed, ebx: DPL
+    ALLOC_MEMORY0   EQU         ABS_ENTRY(MEMORY_OFS, 3)
+
+; allocting Code, type no more needed, ebx: DPL
+    ALLOC_MEMORY1   EQU         ABS_ENTRY(MEMORY_OFS, 4)
+
+; allocting Stack, type no more needed, ebx: DPL
+    ALLOC_MEMORY2   EQU         ABS_ENTRY(MEMORY_OFS, 5)
+
+
+; void FREE_MEMORY(ds:dst);
+; ret: ds = NUL_SEL
+    FREE_MEMORY     EQU         ABS_ENTRY(MEMORY_OFS, 6)
+
+
+
+; bool:eax TREE_XENV_INIT(void);
+; Initializing execution environment
+    TREE_XENV_INIT      EQU         ABS_ENTRY(LOADER_OFS, 0)
+
+
+; int:eax TREE_XENV_LOAD(uint28:eax sector, uint16*cx:pid);
+; Read xfile from hard-disk, sign in to system as process
+; in: eax: sector number in LBA(28-bit), ebx: Privilege Level
+; ret: eax: see below, cx: process id
+
+; -----------------------------------------------------------
+;  value  |                  signification                   |
+; -----------------------------------------------------------
+;     0   |     succeeded, then call linker do next step     |
+; -----------------------------------------------------------
+;  0x0002 |                 read disk fault                  |
+; -----------------------------------------------------------
+;  0x0004 |    there is no valid xfile in specified sector   |
+; -----------------------------------------------------------
+;  0x0008 |          system memory or gdt overflow           |
+; -----------------------------------------------------------
+;  0x000c | cannot accomplish request, process table overflow|
+; -----------------------------------------------------------
+;  0x0010 | cannot accomplish request, symbol table overflow |
+; -----------------------------------------------------------
+
+; entry
+    TREE_XENV_LOAD      EQU         ABS_ENTRY(LOADER_OFS, 1)
+
+; returns
+    LOAD_SUCCESS                EQU        0x0000
+    LOAD_READ_FAULT             EQU        0x0002
+    LOAD_INVALID                EQU        0x0004
+    LOAD_OVERFLOW               EQU        0x0008
+    LOAD_PROC_TAB_OVERFLOW      EQU        0x000c
+    LOAD_SYMBOL_TAB_OVERFLOW    EQU        0x0010
+
+
+; bool:eax TREE_XENV_FREE(uint16:cx pid);
+; ret: eax: 1: succeeded, 0: failed, still has dependents(Is
+;     dynamic library)
+    TREE_XENV_FREE      EQU         ABS_ENTRY(LOADER_OFS, 2)
+
+
+
+; bool:eax TREE_XENV_LINK(uint16:cx pid);
+; Complete the dynamic linking for loaded xfile
+; notice: If failed, call GET_LN_ERROR see reasons
+    TREE_XENV_LINK      EQU         ABS_ENTRY(LINKER_OFS, 0)
+
+
+; void GET_LN_ERROR(uint32*:ds:ebx:buffer);
+; Query reasons of the last failed invoking of TREE_XENV_LINK
+
+    TREE_XENV_ERR       EQU         ABS_ENTRY(LINKER_OFS, 1)
+
+; constant
+    LINK_ERR_LEN        EQU         64
+
+
+
+; void TREE_EXECUTE(uint28:eax:sector, uint2:ebx:pl);
+; Run application(Including loading dynamic library),
+;   load, link, create process, &jmp far
+; in: eax: sector number in LBA(28-bit), ebx: Privilege Level
+; ret: eax: 1: succeeded, 0: failed, ebx: PROCESS RETURN
+; notice: If failed, this procedure prints why-failed text to console
+;     & set ebx = -1
+    TREE_EXECUTE        EQU         ABS_ENTRY(EXEC_OFS, 0)
+
+
+; For terminating process call(Self-call):
+; see inc/nasm/tree.ic
+    TREE_TERMINATE      EQU         ABS_ENTRY(EXEC_OFS, 1)
+
+
+
+; uint16:cx add_gdt_descriptor(uint64:edx:eax:descirptor);
+; ret: ax: its selector if succeeded, or 0(NUL_SEL)
+    ADD_GDT_DESCRIPTOR  EQU     ABS_ENTRY(EXTRA_OFS, 0)
+
+
+; uint64:edx:eax get_gdt_descriptor(uint16:cx:selector);
+    GET_GDT_DESCRIPTOR  EQU     ABS_ENTRY(EXTRA_OFS, 1)
+
+
+; uint64:eax:ecx:base:limit get_des_property(
+;    uint64:edx:eax:descirptor);
+    GET_DES_PROPERTY    EQU     ABS_ENTRY(EXTRA_OFS, 2)
+
+
+; void remove_gdt_descriptor(uint16:ds:selector);
+; remove a descirptor from global descirptors
+;    table by its selector & set ds=NUL_SEL
+    REM_GDT_DESCRIPTOR  EQU     ABS_ENTRY(EXTRA_OFS, 3)
+
+
+; void remove_gdt_descriptor0(uint16:[cx]:selector);
+; remove a descirptor from global descirptors
+;    table by its selector
+    REM_GDT_DESCRIPTOR0 EQU     ABS_ENTRY(EXTRA_OFS, 4)
+
+
+; bool:eax IS_INVALID_SEL(uint16:cx:selector);
+    IS_INVALID_SEL      EQU     ABS_ENTRY(EXTRA_OFS, 5)
+
+
+; bool:eax install_call_gate(...);
+; in: ax: sel, ecx: offset, ebx: paramnum
+;    edx: index in seltab
+    INSTALL_CALL_GATE   EQU     ABS_ENTRY(EXTRA_OFS, 6)
+
+
+; ... make_idt_intgate(...);
+; in: ax: Code-Sel, ebx: Offset, edx: DPL
+; ret: edx:eax: Descriptor
+    MAKE_GDT_CALLGATE   EQU     ABS_ENTRY(EXTRA_OFS, 7)
+
+
+; ... add_gdt_callgate(...);
+; in: edx:eax: Call-Gate Descriptor
+; ret: cx:selector, rpl0, if failed, returns NUL_SEL
+    ADD_GDT_CALLGATE    EQU     ABS_ENTRY(EXTRA_OFS, 8)
+
+
+; void rem_gdt_callgate(uint16:cx:selector);
+    REM_GDT_CALLGATE    EQU     ABS_ENTRY(EXTRA_OFS, 9)
+
+
+; void install_idt_intgate(...);
+; in: ax: Code-Sel, ebx: Offset, ecx: Index
+    INSTALL_IDT_INTGATE EQU     ABS_ENTRY(EXTRA_OFS, 10)
+
+
+
+; 加载一个可执行文件, 生成tss
+; int16:ax LoadProcess(uint28:eax LBA);
+; ret0: eax: LoadProcess.returns
+; ret1: ecx(0 - 15):tss, (16 - 31): pid
+
+    LOAD_PROCESS        EQU         ABS_ENTRY(EXTRA_OFS, 11)
+
+; returns
+    LOAD_PROCESS_SUCCEEDED      EQU     0x0000
+    LOAD_PROCESS_LOAD_FAILED    EQU     0x0002
+    LOAD_PROCESS_LINK_FAILED    EQU     0x0004
+
+
+
+; 零级特权级代码接口, 使用栈传递参数, 压入一个双字选择功能
+;    功能号以及使用说明参看: tree/kernel/pci0.ic
+; in: DWORD [ss:esp]: Selector
+; ret: variable
+    PCI0CALL            EQU         ABS_ENTRY(EXTRA_OFS, 12)
+
+
+; 图形卡控制, 试验性
+    GRAPHIC_STARTG      EQU         ABS_ENTRY(EXTRA_OFS, 13)
+    GRAPHIC_EXITG       EQU         ABS_ENTRY(EXTRA_OFS, 14)
+
+
+
+%endif ; _ABSC_IC_

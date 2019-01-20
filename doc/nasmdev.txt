@@ -1,0 +1,72 @@
+; nasmdev.txt
+; Author: hyan23
+; Date: 2016.05.08
+;
+; [TREE]-NASM 简要开发指南
+;
+
+; 应用程序必须以text段定义代码区, 以data段定义数据区
+; 务必保证所有的段是32字节对齐的(align=32), 而且使用vstart=0修饰
+; 以 'TREE_START'标记 标记程序入口, 以 'TREE_END'标记 标记结束(文件结束)
+; 以 'TREE_NAME'标记 标记应用程序名称, 以 'TREE_VER'标记 标记应用程序版本
+; 以 ___TREE_IPT_LIB_BEGIN_ 与 ___TREE_IPT_LIB_END_ 的组合标记导入库表的范围
+; 以 ___TREE_XPT_TAB_BEGIN_ 与 ___TREE_XPT_TAB_END_ 的~~导出符号表~
+; 以 ___TREE_IPT_TAB_BEGIN_ 与 ___TREE_IPT_TAB_END_ 的~~导入符号表~
+;
+; 一个典型的[TREE]应用程序通常只包含一个代码段和一个数据段
+; 为了简单起见, 我们总是把数据段放在代码段之后
+; 所以, 你的源代码结构的看起来应该是这样的:
+;
+;
+; ----------------------------------------------------------
+;  01.               hyan23/code/tree/demo.nas              |
+;  ---------------------------------------------------------|
+;  02. - - - - - %include "inc/nasm/tree.inc"              |
+;  03.                                                       |
+;  04.                                                       |
+;  05. - - - - - ___TREE_IPT_LIB_BEGIN_                    |
+;  06.                                                       |
+;  07. - - - - - - - __TREE_LIB @1, 'mylib', 0             |
+;  08. - - - - - - - __TREE_LIB @2, 'yourlib', 3           |
+;  09.                                                       |
+;  10. - - - - - ___TREE_IPT_LIB_END_                      |
+;  11.                                                       |
+;  12.                                                       |
+;  13. - - - - - ___TREE_XPT_TAB_BEGIN_                    |
+;  14.                                                       |
+;  15. - - - - - - - ; Nothing 2 Export With THIS File.    |
+;  16.                                                       |
+;  17. - - - - - ___TREE_XPT_TAB_END_                      |
+;  18.                                                       |
+;  19.                                                       |
+;  20. - - - - - ___TREE_IPT_TAB_BEGIN_                    |
+;  21.                                                       |
+;  22. - - - - - - - %include "inc/nasm/kernel/time"         |
+;  23. - - - - - - - __TREE_IMPORT @1, 'foo', foo          |
+;  24. - - - - - - - __TREE_IMPORT @2, 'foo0', foo0        |
+;  25. - - - - - - - __TREE_IMPORT @3, 'sayhi', sayhi      |
+;  26.                                                     |
+;  27. - - - - - ___TREE_IPT_TAB_END_                      |
+;  28.                                                       |
+;  29.                                                       |
+;  30. - - - - - ___TREE_CODE_BEGIN_                       |
+;  31.                                                       |
+;  32. - - - - - TREE_START:                               |
+;  33. - - - - - - - TREE_CALL sayhi                       |
+;  34. - - - - - - - xor eax, eax                          |
+;  35. - - - - - - - TREE_EXIT TREE_X_RET_COM, eax         |
+;  36.                                                       |
+;  37. - - - - - ___TREE_CODE_END_                         |
+;  38.                                                       |
+;  39.                                                       |
+;  40. - - - - - ___TREE_DATA_BEGIN_                       |
+;  41.                                                       |
+;  42. - - - - - - - TREE_NAME 'myprog0'                   |
+;  43. - - - - - - - TREE_VER 0                            |
+;  44.                                                       |
+;  45. - - - - - ___TREE_DATA_END_                         |
+;  46.                                                       |
+;  47.                                                       |
+; ------------------------------------------------------------
+;-----------------------------------------------------------
+;

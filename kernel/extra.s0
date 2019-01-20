@@ -1,0 +1,1072 @@
+; tree/kernel/extra.s0
+; Author: hyan23
+; Date: 2016.06.27
+;
+
+%include "../boot/args.ic"
+%include "../boot/gdt.ic"
+%include "../boot/bits.ic"
+%include "../boot/absc.ic"
+%include "../kernel/private.ic"
+%include "../kernel/xfile.ic"
+%include "../kernel/pci0.ic"
+%include "../inc/nasm/spin.ic"
+%include "../inc/nasm/nasm.ic"
+
+; header
+    _TREE_LEN   DD          TREE_END
+
+; constant
+    THIS_SEL    EQU         EXTRA_SEL
+    THIS_SEL0   EQU         EXTRA_SEL0
+    THIS_OFS    EQU         EXTRA_OFS
+
+; export
+TREE_ABSSYM ADD_GDT_DESCRIPTOR, add_gdt_descriptor, THIS_SEL
+TREE_ABSSYM GET_GDT_DESCRIPTOR, get_gdt_descriptor, THIS_SEL
+TREE_ABSSYM GET_DES_PROPERTY, get_des_property, THIS_SEL
+TREE_ABSSYM REM_GDT_DESCRIPTOR, remove_gdt_descriptor, THIS_SEL
+TREE_ABSSYM REM_GDT_DESCRIPTOR0, remove_gdt_descriptor0, THIS_SEL
+TREE_ABSSYM IS_INVALID_SEL, isInValidSel, THIS_SEL
+TREE_ABSSYM INSTALL_CALL_GATE, install_call_gate, THIS_SEL
+TREE_ABSSYM MAKE_GDT_CALLGATE, make_gdt_callgate, THIS_SEL
+TREE_ABSSYM ADD_GDT_CALLGATE, add_gdt_callgate, THIS_SEL
+TREE_ABSSYM REM_GDT_CALLGATE, rem_gdt_callgate, THIS_SEL
+TREE_ABSSYM INSTALL_IDT_INTGATE, install_idt_intgate, THIS_SEL
+TREE_ABSSYM LOAD_PROCESS, LoadProcess, THIS_SEL
+TREE_ABSSYM PCI0CALL, pci0call, THIS_SEL
+TREE_ABSSYM GRAPHIC_STARTG, Graphic_StartG, THIS_SEL
+TREE_ABSSYM GRAPHIC_EXITG, Graphic_ExitG, THIS_SEL
+
+[BITS 32]
+
+
+; uint16:cx add_gdt_descriptor(uint64:edx:eax:descirptor);
+; ret: ax: its selector if succeeded, or 0(NUL_SEL)
+
+add_gdt_descriptor:
+
+    push ebx
+    push ecx
+    push edx
+    push ds
+
+    push eax                                     ; 保护eax(16 - 31)
+    mov cx, BITS_SEL                             ; 定位到位图
+    mov ds, cx
+
+    mov ebx, TREE_GDT_FIXED                      ; 跳过固定区域
+    mov ecx, (TREE_GDT_BYTES - 8 * TREE_GDT_FIXED) / 8
+.s0:                                             ; 在位图查找
+    bts [ds:TREE_GDT_BITS_OFS], ebx
+    jnc .foundslot
+    inc ebx
+    loop .s0
+    jmp near .overflow                           ; 已满
+
+.foundslot:
+    push eax                                     ; 注册描述符
+    push edx
+
+    mov ax, GDT_SEL                              ; 定位到全局描述符表
+    mov ds, ax
+
+    mov eax, 8                                   ; 计算表内偏移
+    mul ebx
+
+    pushfd                                       ; 中断屏蔽
+
+    cli
+    mov ecx, [ss:(8 + esp)]                      ; 填写
+    mov [ds:eax], ecx
+    mov ecx, [ss:(4 + esp)]
+    mov [ds:(4 + eax)], ecx
+
+    popfd
+
+    pop edx                                      ; 出栈
+    pop eax
+
+    mov ecx, ebx                                 ; GDT索引, ebx(16 - 31): 0
+    call near make_gdt_selector
+    mov cx, ax                                   ; 保护eax(16 - 31)
+    pop eax
+    mov ax, cx
+
+.fin:
+    pop ds
+    pop edx
+    pop ecx
+    pop ebx
+
+    retf
+
+.overflow:                                       ; 失败
+    pop eax
+    xor ax, ax
+    jmp near .fin
+
+
+; uint16:cx make_gdt_selector(uint16:cx:index);
+; in: cx: index of the descirptor objective in gdt
+; ret: ax: its selector, rpl = 3
+
+make_gdt_selector:
+
+    push cx
+
+    shl cx, 3                                    ; 高13位, 表内索引
+    or cx, 0_00b                                 ; 最高请求特权
+                                                 ;or cx, 0_11b
+    mov ax, cx
+
+    pop cx
+    ret
+
+
+; uint64:edx:eax get_gdt_descriptor(uint16:cx:selector);
+
+get_gdt_descriptor:
+
+    push bx
+    push cx
+    push ds
+
+    mov ax, GDT_SEL                              ; 定位到GDT
+    mov ds, ax
+
+    mov ax, 8                                    ; 计算偏移
+    shr cx, 3
+    mul cx                                       ; 没保护 edx
+    mov bx, ax                                   ; 是因为, 使用他传回结果
+
+    mov edx, [ds:(4 + bx)]                       ; 高
+    mov eax, [ds:bx]                             ; 低
+
+    pop ds
+    pop cx
+    pop bx
+
+    retf
+
+
+
+; eax:ecx:base:limit get_des_property(edx:eax:descirptor);
+; in: edx:eax: descirptor
+; ret: eax: base, ecx: limit
+
+get_des_property:
+
+    push ebx
+    push edx
+
+    mov ecx, eax                                 ; 段界限(0 - 15)
+    and ecx, 0x0000ffff
+    mov ebx, edx                                 ; 段界限(16 - 19)
+    and ebx, 0x000f0000
+    or ecx, ebx
+
+    shr eax, 16                                  ; 线性基址(0 - 15)
+    mov ebx, edx
+    and ebx, 0x000000ff                          ; 线性基址(16 - 23)
+    shl ebx, 16
+    and edx, 0xff000000                          ; 线性基址(24 - 31)
+    or eax, ebx
+    or eax, edx
+
+    pop edx
+    pop ebx
+
+    retf
+
+
+
+; void remove_gdt_descriptor(uint16:ds:selector);
+; remove a descirptor fLIB global descirptors
+;    table by its selector
+; in: ds: selector
+; ret: ds:NUL_SEL
+
+remove_gdt_descriptor:                           ; 普通描述符
+                                                 ; ds: 参数, 不保护ds
+    push ax
+    push cx
+
+    mov cx, ds                                   ; 选择子
+
+    call near _remove_gdt_descriptor
+    ; mov ax, NUL_SEL                            ; 无效选择子
+    xor ax, ax
+    mov ds, ax
+
+    pop cx
+    pop ax
+
+    retf
+
+
+remove_gdt_descriptor0:                          ; 移除系统描述符
+                                                 ; cx: 参数, 保护ds
+    push ds
+
+    call near _remove_gdt_descriptor
+
+    pop ds
+    retf
+
+
+_remove_gdt_descriptor:
+
+    pusha
+
+    shr cx, 3                                    ; 还原索引
+
+    mov ax, BITS_SEL                             ; 清位图
+    mov ds, ax
+    btr [ds:TREE_GDT_BITS_OFS], cx
+
+    mov ax, 8                                    ; 计算偏移
+    mul cx
+    mov bx, ax
+
+    mov ax, GDT_SEL                              ; 定位到GDT
+    mov ds, ax
+
+                                                 ; 不再使用的代码，
+                                                 ; task0.ss有解释。
+    ;mov dword [ds:bx], 0                        ; 无效描述符
+    ;mov dword [ds:(4 + bx)], 0
+
+    popa
+
+    ret
+
+
+
+; bool:eax isInValidSel(uint16:cx:selector);
+
+isInValidSel:
+
+    push bx
+    push cx
+    push ds
+
+    shr cx, 3                                    ; 还原索引
+
+    mov ax, 8                                    ; 计算偏移
+    mul cx
+    mov bx, ax
+
+    mov ax, GDT_SEL                              ; 定位到GDT
+    mov ds, ax
+
+    cmp DWORD [ds:(4 + bx)], 0
+    jz .yes
+
+.no:
+    mov eax, TREE_LOGICAL_FALSE
+.fin:
+    pop ds
+    pop cx
+    pop bx
+
+    retf
+
+.yes:
+    mov eax, TREE_LOGICAL_TRUE
+    jmp near .fin
+
+
+
+; 调用门:
+;    为了方便应用程序的编写, 操作系统内核通常要提供大量例程给它们使用,
+; 然而, 处理器禁止将控制权从特权级低的程序转移到特权级高的程序, 因此, 无法
+; 使用常规方法使用这些例程。
+;    调用门(Call-Gate)用于在不同特权级的程序之间进行控制转移, 本质上,
+; 它是一个不同于代码段和数据段的描述符, 可以安装在GDT 或LDT 中。
+;     它的结构如下:
+
+; 高32位:
+; -------------------------------------------------------------
+; 31                16 15 14 13 12 11      8 7 6 5 4      0   |
+; -------------------------------------------------------------
+;    段内偏移量16-31   |P | DPL  |0| 1 1 0 0 | 0 0 0|  参数个数  |
+; -------------------------------------------------------------
+; 低32位:
+; -------------------------------------------------------------
+; 31                         16  15                         0 |
+; -------------------------------------------------------------
+;          代码段选择子           |       段内偏移量0 - 15        |
+; -------------------------------------------------------------
+
+
+; bool install_call_gate(...);
+; in: ax: sel, ecx: offset, ebx: paramnum
+;    edx: index in seltab
+
+install_call_gate:                               ; 安装调用门
+                                                 ; 并保存选择子选择子表
+    push ebx                                     ; 调用门安装到GDT, 使用全局代码
+    push edx                                     ; 段 + 32 位索引。
+    push ds                                      ; 使用导入自身符号的技巧
+                                                 ; 拿到全局代码选择子。
+
+    push ax                                      ; 加载系统静态存储区
+    mov ax, LIB_SEL                              ; 访问选择子表
+    mov ds, ax
+    pop ax
+
+    or ebx, 0x60                                 ; 特权级: 0x60
+
+    push edx                                     ; 生成描述符
+    TREE_ABSCALL MAKE_GDT_CALLGATE               ; 安装到GDT
+    TREE_ABSCALL ADD_GDT_CALLGATE
+
+    pop edx
+    cmp ax, 0
+
+    jz .gdtoverflow
+
+    or ax, 0000000000000_0_11b
+
+    push eax                                     ; 计算indexintab
+    mov eax, edx
+    mov edx, 6
+    mul edx
+    mov ebx, eax
+    pop eax
+
+    add ebx, TREE_LIB_CALLGATE_SEL_OFS
+                                                 ; 保存选择子
+    mov DWORD [ds:ebx], 0
+    inc ebx
+    inc ebx
+    inc ebx
+    inc ebx
+    mov [ds:ebx], ax
+
+    mov eax, TREE_LOGICAL_TRUE
+.fin:
+    pop ds
+    pop edx
+    pop ebx
+
+    retf
+
+.gdtoverflow:
+    mov eax, TREE_LOGICAL_FALSE
+    jmp near .fin
+
+
+
+; edx:eax make_gdt_callgate(see below...);
+; in: ax: selector, ebx(0-4): paramnum, (5-6): dpl, ecx: offset
+; ret: edx:eax: callgate descirptor
+
+make_gdt_callgate:
+
+    push ebx
+    push ecx
+                                                 ; eax
+    shl eax, 16                                  ; 代码选择子
+    and ecx, 0x0000ffff                          ; 段内偏移(0 - 15)
+    or eax, ecx
+
+    xor edx, edx                                 ; edx
+    mov ecx, [ss:esp]                            ; 段内偏移(16 - 31)
+    and ecx, 0xffff0000
+    or edx, ecx
+
+    and ebx, 0x0000001f                          ; 参数个数
+    or edx, ebx
+
+    mov ebx, [ss:(4 + esp)]                      ; 描述符特权级
+    and ebx, 0x00000060
+    shl ebx, 8                                   ; (5-6) ->(13-14)
+    or edx, ebx
+                                                 ; 固定项
+                                                 ; fixed: xxxx_xxxx_xxxx_xxxx_1_xx_0_1100_000_xxxxxb
+                                                 ; 0x00008c00
+    or edx, 0x00008c00
+
+    pop ecx
+    pop ebx
+
+    retf
+
+
+; xxx add_gdt_callgate(xxx);
+; in: edx:eax: Call-Gate Descriptor
+; ret: selector, rpl0
+
+add_gdt_callgate:
+
+    TREE_ABSCALL ADD_GDT_DESCRIPTOR
+    retf
+
+
+; xxx rem_gdt_callgate
+; in: cx: selector
+; ret: none
+
+rem_gdt_callgate:
+
+    TREE_ABSCALL REM_GDT_DESCRIPTOR0
+    retf
+
+
+
+; 中断和异常
+;     1. 中断包括硬件中断和软件中断, 软件中断是由int n 发起的中断。
+;     2. 异常是由处理器内部产生的中断, 分为三种, 程序(指令)异常, 软件异常, 机器检查异常。
+; 根据异常情况的性质和重要性, 异常又可分为: 故障(Faults), 陷阱(Traps), 终止(Aborts)。
+;     3. 处理器使用中断描述符表(Interrupt Descriptor Table, IDT)管理中断, 使用中断
+; 描述符表寄存器(Interrupt Descriptor Table Register, IDTR)跟踪中断描述符表的位置。
+;     4. 中断描述符表在整个系统运行期间只有一份, 不存在局部中断描述符表的说法。
+;     5. 中断门和陷阱门
+; ---------------------------------------------------------------------
+; 31                                16 15 14 13 12      8 7    5 4    0
+; ---------------------------------------------------------------------
+; 中断处理过程在目标代码段内的偏移量16-31 |  P | DPL |0 D 1 1 0|0 0 0| 不使用|
+; ---------------------------------------------------------------------
+; 31                                16 15                             0
+; ---------------------------------------------------------------------
+;         目标代码段描述符选择子          |中断处理过程在目标代码段内的偏移量0-15
+; ---------------------------------------------------------------------
+; 陷阱门
+; ---------------------------------------------------------------------
+; 31                                16 15 14 13 12      8 7    5 4    0
+; ---------------------------------------------------------------------
+; 中断处理过程在目标代码段内的偏移量16-31 |  P | DPL |0 D 1 1 1|0 0 0| 不使用|
+; ---------------------------------------------------------------------
+; 31                                16 15                             0
+; ---------------------------------------------------------------------
+;         目标代码段描述符选择子          |中断处理过程在目标代码段内的偏移量0-15
+; ---------------------------------------------------------------------
+; D位为'0'时, 表示16位的门, 为'1'时, 表示32位的门。
+;    6. 中断和异常处理程序的保护
+;    因为中断和异常的向量没有RPL字段, 所以当处理器进入中断或异常处理程序, 或者通过
+; 任务门发起任务切换时, 不检查RPL。
+;
+
+
+; xxx install_idt_intgate(xxx);
+; in: ax: Code-Sel, ebx: Offset, ecx: Index
+; Ret: none
+
+install_idt_intgate:
+
+    push eax
+    push edx
+
+    xor edx, edx                                 ; 使用RPL作为DPL
+    mov dx, [ss:(12 + esp)]
+    and dx, 0x0003
+    call near make_idt_intgate
+    call near add_idt_intgate
+
+    pop edx
+    pop eax
+
+    retf
+
+
+; xxx make_idt_intgate(xxx);
+; in: ax: Code-Sel, ebx: Offset, edx: DPL
+; ret: edx:eax: Descriptor
+
+make_idt_intgate:
+
+    push ebx
+
+    shl edx, 13                                  ; 高位
+    or edx, 0x00008e00                           ; 固定项1xx0_1110_0000_0000b
+    and ebx, 0xffff0000
+    or edx, ebx
+    shl eax, 16                                  ; 低位
+    mov ebx, [ss:esp]
+    and ebx, 0x0000ffff
+    or eax, ebx
+
+    pop ebx
+    ret
+
+
+; xxx add_idt_intgate(xxx);
+; in: edx:eax, Descriptor, ecx: Index
+; Ret: none
+
+add_idt_intgate:
+
+    push ds
+
+    push eax
+    mov ax, IDT_SEL
+    mov ds, ax
+    pop eax
+
+    mov [ds:(8 * ecx)], eax
+    mov [ds:(4 + 8 * ecx)], edx
+
+    pop ds
+    ret
+
+
+
+; 任务管理
+
+; 局部描述符表(LDT):
+;   1. 之前, 我们把所有的描述符都放在全局描述符表(GDT)中,
+; 不管他是内核程序还是用户程序, 为了有效地实现任务间隔离并且减轻
+; GDT 的负担, 处理器建议每个任务都应到具备自己的描述符表, 称为
+; 局部描述符表, (Local Descriptor Table, LDT), 并且把专属于
+; 自己的那些描述符存放在LDT 中。局部描述符表的0 号槽位也是可以使用的。
+;   2. 处理器使用GDTR 寄存器追踪全局描述符表, 同样, 使用LDTR 寄存器追踪局部
+; 描述符表。
+;   3. 在一个多任务操作系统中, 会有很多任务轮流执行, 这在执行中的那个任务, 叫作
+; 当前任务(Current Task), 因为, LDTR寄存器只有一个, 所有, 他只用于指向当前
+; 任务的LDT, 每当发生任务切换, LDTR的内容被更新, 以指向新的任务的LDT。
+; 登记一个局部描述符表依赖的数据和登记全局描述符表相同, 但使用一个新的命令 lldt
+; (load ldt), 若想引用一个局部段, 其选择子的表指示器字段(TI, Table Indicator)
+; 应置'1', 另外, 一个LDT 所能容纳的描述符数量也是2^13 即8192 个。
+
+; 任务状态段(TTS):
+;   1. 为了保存任务的状态, 并在下次重新执行他的时候恢复, 每个任务都使用一个额外的内存
+; 区域保存相关信息, 他叫做任务状态段(Task LIBe Segment, TTS), 任务状态段(TTS)
+; 具有固定的格式, 最小的尺寸是104 字节, 处理器的固件能够识别TTS 的每个字段, 并在任务
+; 切换的时候, 读取其中的信息。
+;   2. 和局部描述表一样, 处理器使用TR(Task Register)寄存器来指向当前任务的TSS,
+; 当任务发生切换的时候, TR的内容被更新, 指向新任务的TSS, 这个过程是这样的:
+; 首先, 处理器将当前任务的现场信息保存到由TR 寄存器指向的TSS, 再使TR寄存器指向
+; 新任务的TSS, 并从新任务的TSS 中恢复现场。
+;   3. 任务状态段格式:
+
+%include "../kernel/tss.ic"
+
+; 特权级(Privilege Level):
+;   1. 不同特权级别的程序, 所负担的职责以及在系统中扮演的角色是不一样的, 那些只有当当前
+; 特权级为0 时才能执行的程序成为特权指令(Privileged Instructions), 如 lgdt,
+; lldt, ltr, hlt等。
+;   2. 除了那些特权级敏感的指令外, 处理器还允许对各个特权级别所能执行的I/O 操作
+; 进行控制, 在处理器的标志寄存器EFLAGS 中, 位13, 12 位是IOPL 位, 也就是输入/输出
+; 特权级(I/O Privilege Level), 他代表着当前任务的I/O 特权级别。
+;   3. EFLAGS 结构如下:
+; -------------------------------------------------------------------
+; 31        |21          |15 |13|12                                0 |
+; -------------------------------------------------------------------
+;   (保留) |ID | | | | | |0| |IOPL |OF|DF|IF|TF|SF|ZF|0|AF|0|PF|1|CF |
+; -------------------------------------------------------------------
+
+; 任务:
+; 在内核初始化完成后, 接下来的工作就是加载和重定位用户程序, 并转交控制权, 按照处理器的
+; 要求, 要使一个程序成为任务, 必须要有LDT 和TSS; 加载程序并且创建一个任务, 需要用到很多
+; 数据, 内核应当为每个任务创建一个内存区域, 来记录任务的信息和状态, 称为进程控制块(Task
+; Control Block, TCB), 任务控制块不是处理器的要求。
+
+
+; 创建任务状态段TSS
+;     TSS 内偏移为0处是前一个任务的TSS 描述符选择子, 和LDT 一样, 必须在全局描述符表
+; 中创建每个TSS 的描述符, 当系统中有多个任务存在时, 可以从一个任务切换到另外一个任务
+; 执行, 此时称任务是嵌套的, 被嵌套的任务使用这个指针来识别前一个任务, 创建TSS 时, 可以
+; 为0。
+;    SS0, SS1, SS2 和ESP0, ESP1, ESP2 分别是0, 1, 2 级特权栈的信息, 由任务的创建者
+; 填写, 它们属于静态数据, 处理器固件不会主动修改, 当通过调用门进行特权级控制转移时, 处理器
+; 使用这些信息来切换栈。
+;    CR3 和分页有关, 一般由任务的创建者填写, 如果不使用分页, 可以置0。
+;    偏移32 - 92 为寄存器的快照部分, 用于在任务发生切换时保护现场和恢复, 当任务第一次执行,
+; 处理器从这里加载初始执行环境, 并从CS:EIP 处执行第一条指令。
+;    在之后的任务运行期间, 这部分内容由处理器负责维护。
+;    LDT 段选择子是当前任务的LDT描述符选择子, 指向当前任务的LDT。
+;    T位用于软件调试, 在多任务环境中, 如果一个任务的T位是1, 每次切换到该任务时, 将引发一个
+; 调试异常中断。
+;    I/O 映射基地址指向当前任务的I/O 许可位串(I/O Permission Bit String)。
+;
+
+; 加载一个可执行文件, 生成tss
+; int16:ax LoadProcess(uint28:eax LBA);
+; in: eax: sector in LBA
+; ret: eax: LoadProcess.returns
+; ret: ecx(0 - 15):tss, (16 - 31): pid
+
+LoadProcess:
+
+    push ebx
+    push edx
+    push ds
+    push es
+
+    mov ebx, 3                                   ; 以特权级3
+
+    TREE_ABSCALL TREE_XENV_LOAD                  ; 创建进程空间
+
+    cmp eax, LOAD_SUCCESS
+    jz .ldsuccess
+    cmp eax, LOAD_READ_FAULT
+    jz .ldreadfault
+    cmp eax, LOAD_INVALID
+    jz .ldinvalid
+    cmp eax, LOAD_OVERFLOW
+    jz .ldoverflow
+    cmp eax, LOAD_PROC_TAB_OVERFLOW
+    jz .ldprocof
+    cmp eax, LOAD_SYMBOL_TAB_OVERFLOW
+    jz .ldsymbolof
+
+.ldsuccess:
+    TREE_ABSCALL TREE_XENV_LINK                  ; 符号链接
+    test eax, TREE_LOGICAL_TRUE
+    jz .lnfailed
+
+                                                 ; 加载成功, 以下生成任务状态段
+.lnsuccess:
+    TREE_LOCATE_PROC                             ; 定位到进程空间
+    mov ax, ds
+    mov es, ax
+
+    xor ebx, ebx
+    push ecx                                     ; 以特权级0
+    mov ecx, TREE_TSS_MINIMUM_BYTES              ; 请求tss 所需空间
+    TREE_ABSCALL ALLOC_MEMORY0
+    pop ecx
+    cmp ax, 0
+    jz .overflow
+    mov ds, ax
+                                                 ; 初始化tss
+    mov WORD [ds:TREE_TSS_LAST_TSS_SEL_OFS], 0
+                                                 ; 配置最高级特权栈
+    mov DWORD [ds:TREE_TSS_ESP0_POINTER_OFS], TREE_USR_STACK - 1
+    mov ax, [es:TREE_PROC_SEL_STK_0_SEL_OFS]
+    mov [ds:TREE_TSS_SS0_SEL_OFS], ax
+                                                 ; 配置一级特权栈
+    mov DWORD [ds:TREE_TSS_ESP1_POINTER_OFS], TREE_USR_STACK - 1
+    mov ax, [es:TREE_PROC_SEL_STK_1_SEL_OFS]
+    mov [ds:TREE_TSS_SS1_SEL_OFS], ax
+                                                 ; 配置二级特权栈
+    mov DWORD [ds:TREE_TSS_ESP2_POINTER_OFS], TREE_USR_STACK - 1
+    mov ax, [es:TREE_PROC_SEL_STK_2_SEL_OFS]
+    mov [ds:TREE_TSS_SS2_SEL_OFS], ax
+                                                 ; 初始化控制寄存器
+    mov DWORD [ds:TREE_TSS_REGISTER_CR3_OFS], 0
+                                                 ; 入口点(入口偏移)
+    mov eax, [es:ACCESS_SRC(TREE_XFILE_ENTRY_OFS)]
+    mov [ds:TREE_TSS_REGISTER_EIP_OFS], eax
+                                                 ; 初始化通用寄存器
+    mov DWORD [ds:TREE_TSS_REGISTER_EFLAGS_OFS], TREE_TSS_BUILT_EFLAGS
+    mov DWORD [ds:TREE_TSS_REGISTER_EAX_OFS], 0
+    mov DWORD [ds:TREE_TSS_REGISTER_ECX_OFS], 0
+    mov DWORD [ds:TREE_TSS_REGISTER_EDX_OFS], 0
+    mov DWORD [ds:TREE_TSS_REGISTER_EBX_OFS], 0
+                                                 ; 初始化三级特权栈
+    mov DWORD [ds:TREE_TSS_REGISTER_ESP_OFS], TREE_USR_STACK - 1 - 4
+    mov [es:(TREE_USR_STACK - 1 - 4)], es        ; 进程空间选择子->栈顶
+
+                                                 ; 初始化索引寄存器
+    mov DWORD [ds:TREE_TSS_REGISTER_EBP_OFS], 0
+    mov DWORD [ds:TREE_TSS_REGISTER_ESI_OFS], 0
+    mov DWORD [ds:TREE_TSS_REGISTER_EDI_OFS], 0
+                                                 ; 初始化附加段选择器
+    mov WORD [ds:TREE_TSS_SEGSEL_ES_OFS], NUL_SEL
+                                                 ; 入口点(所在段)
+    mov ax, [es:ACCESS_SRC(4 + TREE_XFILE_ENTRY_OFS)]
+    mov [ds:TREE_TSS_SEGSEL_CS_OFS], ax
+                                                 ; 初始化三级特权栈
+    mov ax, [es:TREE_PROC_SEL_STK_3_SEL_OFS]
+    mov [ds:TREE_TSS_SEGSEL_SS_OFS], ax
+                                                 ; 初始化数据段选择器
+    mov ax, [es:ACCESS_SRC(TREE_XFILE_DATA_OFS - 2)]
+    mov [ds:TREE_TSS_SEGSEL_DS_OFS], ax
+                                                 ; 初始化附加段选择器
+    mov WORD [ds:TREE_TSS_SEGSEL_FS_OFS], NUL_SEL
+    mov WORD [ds:TREE_TSS_SEGSEL_GS_OFS], NUL_SEL
+                                                 ; 登记任务LDT选择子
+    mov ax, [es:TREE_PROC_PRIVATE_LDT_LOCATOR_OFS]
+    mov [ds:TREE_TSS_LDT_SEL_OFS], ax
+                                                 ; t位, 不使用调试
+    mov WORD [ds:TREE_TSS_DEBUG_BIT_T_OFS], 0
+                                                 ; 不使用i/o许可位串
+    mov WORD [ds:TREE_TSS_IOPBS_BASE_OFS], TREE_TSS_MINIMUM_BYTES - 1
+
+; 创建TSS 描述符
+; 高32 位:
+; -------------------------------------------------------------------------
+; 31       24  23 22  21  20  19     16 15 14 13 12 11     8   7        0 |
+; -------------------------------------------------------------------------
+;基址 24 - 31| G | 0 | 0 |AVL|界限16 - 19|P | DPL|0 |TYPE(1001)|基址16 - 23 |
+; -------------------------------------------------------------------------
+; 低32 位:
+; -------------------------------------------------------------------------
+; 31                                 16  15                             0 |
+; -------------------------------------------------------------------------
+;              基址 0 - 15              |              界限0 - 15          |
+; -------------------------------------------------------------------------
+
+;    其中, TYPE^1 是任务的B(忙, Busy) 位, 由处理器进行管理。
+
+    push cx
+    mov cx, ds                                   ; 通过修改tss数据
+    TREE_ABSCALL GET_GDT_DESCRIPTOR              ; 描述符
+    pop cx
+                                                 ; tss所占内存怎么释放?
+    mov [es:TREE_PROC_PRIVATE_TSS_SEL_OFS], ds
+
+                                                 ; 20 - 23: 0, 12 - 15: 8(1000b), 8 - 11: 9(1001b)
+    and edx, 0xff0f00ff
+    or edx, 0x00008900
+
+; 安装TSS 描述符
+    TREE_ABSCALL ADD_GDT_DESCRIPTOR
+    cmp ax, 0
+    jz .overflow
+
+.loadprocesssucceeded:
+    shl ecx, 16                                  ; pid
+    mov cx, ax                                   ; 从cx返回
+    mov eax, LOAD_PROCESS_SUCCEEDED
+
+    jmp near .fin
+
+
+.ldreadfault:
+.ldinvalid:
+.ldoverflow:
+.ldprocof:
+.ldsymbolof:
+
+.overflow:
+    xor cx, cx
+    mov eax, LOAD_PROCESS_LOAD_FAILED
+    ; TODO: FREE
+
+    jmp near .fin
+
+.lnfailed:
+.putlnerror:
+    mov eax, LOAD_PROCESS_LINK_FAILED
+    ; TODO: FREE
+
+.fin:
+    pop es
+    pop ds
+    pop edx
+    pop ebx
+
+    retf
+
+
+Switch:
+    lldt [ds:TREE_TSS_LDT_SEL_OFS]
+    ltr ax
+                                                 ; 假装从调用门返回,
+    xor eax, eax                                 ; 跳转到用户程序。
+    mov ax, [ds:TREE_TSS_SEGSEL_SS_OFS]
+    push eax
+    mov eax, [ds:TREE_TSS_REGISTER_ESP_OFS]
+    push eax
+    xor eax, eax
+    mov ax, [ds:TREE_TSS_SEGSEL_CS_OFS]
+    push eax
+    mov eax, [ds:TREE_TSS_REGISTER_EIP_OFS]
+    push eax
+
+    retf
+
+
+
+; 零级特权级代码接口
+; in: DWORD [ss:esp]: Selector
+; ret: variable
+
+%define _END_ jmp near .fin
+
+pci0call:
+
+                                                 ; instructions
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_INSTRUCTION_CLI
+    jz .cli0
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_INSTRUCTION_STI
+    jz .sti0
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_INSTRUCTION_HLT
+    jz .hlt0
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_INSTRUCTION_FIN
+    jz .fin0
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_INSTRUCTION_SLEEP
+    jz .sleep0
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_INSTRUCTION_HUNG
+    jz .hung0
+
+                                                 ; procedures
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_PROCEDURE_READ_LIB
+    jz .readLIB
+    cmp DWORD [ss:(8 + esp)], TREE_PCI0_SEL_PROCEDURE_WRITE_LIB
+                                                 ;jz .writeLIB
+    _END_
+
+.cli0:
+    cli
+    _END_
+
+.sti0:
+    sti
+    _END_
+
+.hlt0:
+    hlt
+    _END_
+
+.fin0:
+%include "../kernel/tcb.ic"
+
+    push ax
+    push ds
+
+    cli                                          ; 对当前任务操作
+    mov ax, LIB_SEL                              ; 必须关闭中断,
+    mov ds, ax                                   ; 禁止任务切换,
+                                                 ; 否则可能误伤。
+
+    mov ax, [ds:TREE_LIB_CURRENT_TASK_OFS]       ; 当前任务
+                                                 ; ASSERT(NUL_SEL != ax)
+    mov ds, ax
+    mov WORD [ds:TREE_TCB_STATUS_OFS], TREE_TCB_STATUS_FIN
+
+    mov ax, LIB_SEL
+    mov ds, ax
+
+    mov ax, [ds:TREE_LIB_CURRENT_TASK_OFS]       ; 判断当前任务是否是sh
+    mov ds, ax                                   ; 绑定任务, 若是, 该任务
+    test BYTE [ds:TREE_TCB_BLSH_OFS], TREE_LOGICAL_TRUE ; 结束后将唤醒
+    jz .nt                                       ; sh。
+
+    mov ax, LIB_SEL
+    mov ds, ax
+
+    mov ax, [ds:TREE_LIB_SH_TCB_SEL_OFS]         ; 唤醒sh
+    mov ds, ax
+    mov WORD [ds:TREE_TCB_STATUS_OFS], TREE_TCB_STATUS_WAIT
+
+    mov ax, LIB_SEL
+    mov ds, ax
+
+    mov ax, [ds:TREE_LIB_ACTIVE_COUNT_OFS]       ; 活动进程数+1
+    inc ax
+    mov [ds:TREE_LIB_ACTIVE_COUNT_OFS], ax
+
+.nt:
+    sti
+    int 70h                                      ; 发起调度
+    pop ds
+    pop ax
+    _END_
+
+.sleep0:
+    pushad
+    push ds
+
+    cli
+    mov ax, LIB_SEL
+    mov ds, ax
+
+    mov ax, [ds:TREE_LIB_ACTIVE_COUNT_OFS]       ; 活动进程数-1
+    dec ax
+    mov [ds:TREE_LIB_ACTIVE_COUNT_OFS], ax
+
+    mov ax, [ds:TREE_LIB_CURRENT_TASK_OFS]
+    mov edx, [ds:TREE_LIB_TICK_COUNT_OFS]
+    add edx, ecx                                 ; 记录计算唤醒时间
+    mov ds, ax
+    mov WORD [ds:TREE_TCB_STATUS_OFS], TREE_TCB_STATUS_SLEEP
+    mov [ds:TREE_TCB_SLEEP_OFS], edx
+
+    sti
+    int 70h
+    pop ds
+    popad
+    _END_
+
+.hung0:
+    push ax
+    push ds
+
+    cli
+    mov ax, LIB_SEL
+    mov ds, ax
+
+    mov ax, [ds:TREE_LIB_ACTIVE_COUNT_OFS]       ; 活动进程数-1
+    dec ax
+    mov [ds:TREE_LIB_ACTIVE_COUNT_OFS], ax
+
+    mov ax, [ds:TREE_LIB_CURRENT_TASK_OFS]       ; 挂起。
+    mov ds, ax
+    mov WORD [ds:TREE_TCB_STATUS_OFS], TREE_TCB_STATUS_HUNG
+
+    sti
+    int 70h
+    pop ds
+    pop ax
+    _END_
+
+.readLIB:
+    call near ReadLIB
+    _END_
+
+.writeLIB:
+    call near WriteLIB
+    _END_
+
+
+.fin:
+    retf 4
+
+
+; ReadLIB
+; in: eax: Offset, ds:ebx, dst, ecx: bytes
+; ret: none
+
+ReadLIB:
+
+    pushad
+    push es
+
+    mov esi, eax                                 ; 从静态存储区copy
+    mov ax, LIB_SEL                              ; ecx字节数据到用户
+    mov es, ax                                   ; 缓冲区。
+.cpydata:
+    mov al, [es:esi]
+    mov [ds:ebx], al
+    inc esi
+    inc ebx
+    loop .cpydata
+
+    pop es
+    popad
+
+    ret
+
+
+; WriteLIB
+; in: eax: Offset, ds:ebx, dst, ecx: bytes
+; ret: none
+
+WriteLIB:
+
+    pushad
+    push es
+
+    mov esi, eax
+    mov ax, LIB_SEL
+    mov es, ax
+.cpydata:                                        ; 从用户缓冲区copy
+    mov al, [ds:ebx]                             ; ecx字节数据到
+    mov [es:esi], al                             ; 静态存储区
+    inc esi
+    inc ebx
+    loop .cpydata
+
+    pop es
+    popad
+
+    ret
+
+
+
+; 图形卡控制
+
+%macro __ENABLE_B32_PROTECTED_MODE_ 0
+
+    mov eax, cr0                                 ; Set CR0.PE
+    or eax, 1
+    mov cr0, eax
+
+    in al, 0x92                                  ; A21
+    or al, 0000_0010b
+    out 0x92, al
+
+%endmacro ; __ENABLE_B32_PROTECTED_MODE_
+
+%macro __DISABLE_B32_PROTECTED_MODE_ 0
+
+    mov eax, cr0                                 ; Clear CR0.PE
+    and eax, 0xfffffffe
+    mov cr0, eax
+
+    in al, 0x92                                  ; A21
+    and al, 1111_1101b
+    out 0x92, al
+
+%endmacro ; __DISABLE_B32_PROTECTED_MODE_
+
+
+; void Graphic_StartG(void);
+
+Graphic_StartG:
+
+    pushad
+    mov ebx, esp                                 ; 保存旧栈0
+    mov cx, ss
+
+    __DISABLE_B32_PROTECTED_MODE_
+    jmp 0x0000:(THIS_OFS + .flush0)
+[BITS 16]
+.flush0:
+    xor ax, ax                                   ; 切换栈
+    mov ss, ax                                   ; 0x7c00以下的栈空间,
+    mov sp, 0x7c00                               ; 进入32位就废弃了。
+
+    push ebx                                     ; 保存旧栈1
+    push cx
+
+    mov ax, 0x4f02                               ; 1280*720*8bit
+    mov bx, 0x4105
+    int 0x10
+
+    pop cx                                       ; 还原栈
+    pop ebx
+    mov esp, ebx
+    mov ss, cx
+
+    __ENABLE_B32_PROTECTED_MODE_
+    jmp DWORD THIS_SEL:.flush1
+[BITS 32]
+.flush1:
+    popad
+
+    retf
+
+
+; void Graphic_ExitG(void);
+
+Graphic_ExitG:
+
+    pushad
+    mov ebx, esp                                 ; 保存旧栈0
+    mov cx, ss
+
+    __DISABLE_B32_PROTECTED_MODE_
+    jmp 0x0000:(THIS_OFS + .flush0)
+[BITS 16]
+.flush0:
+    xor ax, ax                                   ; 切换栈
+    mov ss, ax                                   ; 0x7c00以下的栈空间,
+    mov sp, 0x7c00                               ; 进入32位就废弃了。
+
+    push ebx                                     ; 保存旧栈1
+    push cx
+
+    mov ax, 0x0003                               ; 80*25*ch
+    int 0x10
+
+    pop cx                                       ; 还原栈
+    pop ebx
+    mov esp, ebx
+    mov ss, cx
+
+    __ENABLE_B32_PROTECTED_MODE_
+    jmp DWORD THIS_SEL:.flush1
+[BITS 32]
+.flush1:
+    popad
+
+    retf
+
+
+TREE_END:

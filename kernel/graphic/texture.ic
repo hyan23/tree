@@ -1,0 +1,21 @@
+; tree/kernel/graphic/texture.ic
+; Author: hyan23
+; Date: 2016.07.28
+;
+
+%ifndef _TEXTURE_IC0_
+%define _TEXTURE_IC0_
+
+    TREE_TEXTURE_CONTEXT_BYTES  EQU     12
+
+    TREE_TEXTURE_WIDTH_OFS      EQU     0
+    TREE_TEXTURE_HEIGHT_OFS     EQU     2 + TREE_TEXTURE_WIDTH_OFS
+    TREE_TEXTURE_TEXTURE_OFS    EQU     2 + TREE_TEXTURE_HEIGHT_OFS
+
+    TREE_DRAWLINE_STYLE_HORIZONTAL  EQU     0
+    TREE_DRAWLINE_STYLE_VERTICAL    EQU     1
+
+
+
+
+%endif ; _TEXTURE_IC0_

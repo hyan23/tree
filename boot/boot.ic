@@ -1,0 +1,120 @@
+; tree/boot/boot.ic
+; Author: hyan23
+; Date: 2016.05.03
+;
+
+; [TREE]启动参数
+
+
+%ifndef _BOOT_IC_
+%define _BOOT_IC_
+
+; 第一阶段
+; 启动时, 主引导程序从硬盘扇区:
+    MBR32_SEC               EQU            1
+    MBRX_SEC                EQU            2
+    BASEC_SEC               EQU            10
+    MEMORY_SEC              EQU            20
+    LOADER_SEC              EQU            30
+    LINKER_SEC              EQU            40
+    EXEC_SEC                EQU            50
+    EXTRA_SEC               EQU            60
+    RESERV_SEC              EQU            70
+
+; 加载绝对定位的代码:
+    BASER_OFS               EQU            0x7c00
+    MBR32_OFS               EQU            0x7e00
+    MBRX_OFS                EQU            0x8000
+    BASEC_OFS               EQU            0x9000
+    MEMORY_OFS              EQU            0xa000
+    LOADER_OFS              EQU            0xb000
+    LINKER_OFS              EQU            0xc000
+    EXEC_OFS                EQU            0xd000
+    EXTRA_OFS               EQU            0xe000
+    RESERV_OFS              EQU            0xf000
+
+; (详细的硬盘与内存布局参看tree/doc/kernelfiles.txt)
+
+
+; 全局描述符表
+    GDT_SEC                EQU            500
+    GDT_SEG                EQU            0x1000
+    GDT_OFS                EQU            0x10000
+
+; 全局中断向量表
+    IDT_SEC                EQU            628
+    IDT_SEG                EQU            0x2000
+    IDT_OFS                EQU            0x20000
+
+; 全局位图
+    BITS_SEC            EQU            756
+    BITS_SEG            EQU            0x3000
+    BITS_OFS            EQU            0x30000
+
+; 静态存储区
+    LIB_SEC                EQU            884    ; -1100
+    LIB_SEG                EQU            0x4000
+    LIB_OFS                EQU            0x40000
+
+
+
+; 第二阶段, 动态的
+;kernel
+    LIBINT0_SEC             EQU            100
+    LIBGATE_SEC             EQU            110
+    LIBAGENT_SEC            EQU            120
+    LIBTASK0_SEC            EQU            130
+    LIBTASK_SEC             EQU            140
+
+
+; driver
+    LIBTIME_SEC             EQU            200
+    LIBKBD0_SEC             EQU            210
+    LIBKBD_SEC              EQU            220
+    LIBMOUSE0_SEC           EQU            230
+    LIBMOUSE_SEC            EQU            240
+
+
+; graphic
+    LIBGRAPHIC0_SEC             EQU            300
+    LIBGRAPHIC_SEC              EQU            310
+    LIBTEXTURE_SEC              EQU            320
+    LIBFONT_SEC                 EQU            330 ; -400
+
+
+; wnd
+    LIBWINDOW_SEC           EQU            400
+    LIBLINK_SEC             EQU            410
+    LIBMSGQ_SEC             EQU            420
+    LIBEVENT_SEC            EQU            430
+    LIBDESKTOP_SEC          EQU            440   ; -460
+    LIBWM_SEC               EQU            460   ; -490
+
+
+; ;;;;;;;;;;;;;
+    LIBTREE_SEC             EQU            1100
+    LIBSH_SEC               EQU            1110
+
+
+; io
+    LIBCONIO_SEC            EQU            1200
+    LIBREADISK_SEC          EQU            1210
+    LIBWRDISK_SEC           EQU            1220
+
+
+; utility
+    LIBSTRING_SEC           EQU            1300
+    LIBMATH_SEC             EQU            1310
+    LIBRAND_SEC             EQU            1320
+    LIBSPIN_SEC             EQU            1330
+
+    LIBARRAY_SEC            EQU            1400
+    LIBLINKED_SEC           EQU            1410
+    LIBQUEUE_SEC            EQU            1420
+    LIBSTACK_SEC            EQU            1430
+
+; usr
+                                                 ; 2000 - ...
+
+
+%endif ; _BOOT_IC_

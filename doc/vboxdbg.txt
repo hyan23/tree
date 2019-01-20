@@ -1,0 +1,427 @@
+; hyan23 编辑。
+; 2016.08.04
+
+STEP 1：
+	在物理机中打开“virtualbox manager”，在虚拟机列表框中选中一台VM，
+	然后点击右键【create shortcut on desktop】，
+	使VM创建一个快捷方式到桌面。
+
+STEP 2：
+	切换到物理机系统桌面，右键点击创建好的VM快捷图标，
+	打开【属性】--->【快捷方式】，
+	在【目标】框的最后输入--debug选项。
+
+STEP 3：
+	双击桌面上的VM快捷图标，
+	可以看到virtualbox已经为此VM打开了
+	内置调试器且菜单栏打开了隐藏菜单【debug】。
+
+help: 显示帮助。
+stop: 暂停当前正在运行的虚拟机。
+g:    恢复暂停的虚拟机到继续执行的状态。
+dg:   显示全局描述符表。
+dl:   显示局部描述符表。
+dt:   显示任务段寄存器内容。
+di:   显示中断描述符表。
+r:    显示大部分的寄存器内容，通用寄存器，以及段寄存器，
+	标志寄存器，和当前运行的指令助记符。
+r reg: 显示指定的寄存器内容。
+db address: 从指定的位置以ascii码显示，
+	如果前一次已经使用过db address下一次可以不指定显示的起始地址，
+	将从前一次的结束位置开始显示。
+dw/dd: address: 从指定单位制按双字节/四字节显示内存内容。
+u address: 从指定的位置进行反汇编。
+u: 从当前执行指令的位置进行反汇编，这条命令需要前提是要么
+	已经执行过r命令要么已经执行过u命令，原理和db相同。
+bp address: 在指定地址设置断点。
+
+
+ -- Commands & Functions:
+
+bye
+	Exits the debugger.
+
+cpu [idCpu]
+	If no argument, display the current CPU,
+	else change to the specified CPU.
+
+echo <str1> [str2..[strN]]
+	Displays the strings separated by one blank space
+	and the last one followed by a newline.
+
+exit
+	Exits the debugger.
+
+format
+	Evaluates an expression and formats it.
+
+detect
+	Detects or re-detects the guest os and
+	starts the OS specific digger.
+
+harakiri
+	Kills debugger process.
+
+help [cmd/op [..]]
+	Display help. For help about info items try 'info help'.
+
+info <info> [args]
+	Display info register in the DBGF. For a list
+	of info items try 'info help'.
+
+loadimage <filename> <address> [name]
+	Loads the symbols of an executable image
+	at the specified address.
+
+loadmap <filename> <address> [name] [subtrahend] [seg]
+	Loads the symbols from a map file,
+	usually at a specified address.
+
+loadplugin <plugin1> [plugin2..N]
+	Loads one or more plugins
+
+loadseg <filename> <address> <seg> [name]
+	Loads the symbols of a segment in the executable
+	image at the specified address.
+
+loadsyms <filename> [delta] [module] [module address]
+	Loads symbols from a text file.
+	Optionally giving a delta and a module.
+	Load variables from file. One per line,
+	same as the args 2。
+
+loadvars <filename>
+	the set command.
+
+log <group string>
+	Modifies the logging group settings (VBOX_LOG)
+
+logdest <dest string>
+	Modifies the logging destination (VBOX_LOG_DEST).
+
+logflags <flags string>
+	Modifies the logging flags (VBOX_LOG_FLAGS).
+
+quit
+	Exits the debugger.
+
+runscript <filename>
+	Runs the command listed in the script.
+	Lines starting with '#' (after removing blanks)
+	are comment. blank lines are ignored.
+	Stops on failure.
+
+set <var> <value>
+	Sets a global variable.
+
+showplugins
+	List loaded plugins.
+
+showvars
+	List all the defined variables.
+
+stop
+	Stop execution.
+
+unloadplugin <plugin1> [plugin2..N]
+	Unloads one or more plugins.
+
+unset <var1> [var1..[varN]]
+	Unsets (delete) one or more global variables.
+
+writecore <filename>
+	Write core to file.
+
+Emulation: CodeView/WinDbg
+
+ba          <access> <size> <address>
+	[passes [max passes]] [cmds]
+	Sets a data access breakpoint.
+
+bc          all | <bp#> [bp# []]
+	Enabled a set of breakpoints.
+
+bd          all | <bp#> [bp# []]
+	Disables a set of breakpoints.
+
+be          all | <bp#> [bp# []]
+	Enabled a set of breakpoints.
+
+bl
+	Lists all the breakpoints.
+
+bp          <address> [passes [max passes]] [cmds]
+	Sets a breakpoint (int 3).
+
+br			<address> [passes [max passes]] [cmds]
+	Sets a recompiler specific breakpoint.
+
+d           [addr]
+	Dump memory using last element size.
+
+da          [addr]
+	Dump memory as ascii string.
+
+db          [addr]
+	Dump memory in bytes.
+
+dd          [addr]
+	Dump memory in double words.
+
+da          [addr]
+	Dump memory as ascii string.
+
+dg          [sel [..]]
+	Dump the global descriptor table (GDT).
+
+dga         [sel [..]]
+	Dump the global descriptor table (GDT)
+	including not-present entries.
+
+di          [int [..]]
+	Dump the interrupt descriptor table (IDT).
+
+dia         [int [..]]
+	Dump the interrupt descriptor table (IDT) including
+	not-present entries.
+
+dl          [sel [..]]
+	Dump the local descriptor table (LDT).
+
+dla         [sel [..]]
+	Dump the local descriptor table (LDT) including not-presententries.
+
+dpd         [addr] [index]
+	Dumps page directory entries of the default context.
+
+dpda        [addr]
+	Dumps specified page directory.
+
+dpdb        [addr] [index]
+	Dumps page directory entries of the guest and thehypervisor.
+
+dpdg        [addr] [index]
+	Dumps page directory entries of the guest.
+
+dpdh        [addr] [index]
+	Dumps page directory entries of the hypervisor.
+
+dph         [addr [cr3 [mode]]
+	Dumps the paging hierarchy at for specfied address range.
+	Default context.
+
+dphg        [addr [cr3 [mode]]
+	Dumps the paging hierarchy at for specfied address range.
+	Guest context.
+
+dphh        [addr [cr3 [mode]]
+	Dumps the paging hierarchy at for specfied address range.
+	Hypervisor context.
+
+dpt         <addr>
+	Dumps page table entries of the default context.
+
+dpta        <addr>
+	Dumps specified page table.
+
+dptb        <addr>
+	Dumps page table entries of the guest and the hypervisor.
+
+dptg        <addr>
+	Dumps page table entries of the guest.
+
+dpth        <addr>
+	Dumps page table entries of the hypervisor.
+
+dq          [addr]
+	Dump memory in quad words.
+
+dt          [tss|tss:ign|addr]
+	Dump the task state segment (TSS).
+
+dt16        [tss|tss:ign|addr]
+	Dump the 16-bit task state segment (TSS).
+
+dt32        [tss|tss:ign|addr]
+	Dump the 32-bit task state segment (TSS).
+
+dt64        [tss|tss:ign|addr]
+	Dump the 64-bit task state segment (TSS).
+
+dw          [addr]
+	Dump memory in words.
+
+eb          <addr> <value>
+	Write a 1-byte value to memory.
+
+ew          <addr> <value>
+	Write a 2-byte value to memory.
+
+ed          <addr> <value>
+	Write a 4-byte value to memory.
+
+eq          <addr> <value>
+	Write a 8-byte value to memory.
+
+g
+	Continue execution.
+
+k
+	Callstack.
+
+kg
+	Callstack - guest.
+
+kh
+	Callstack - hypervisor.
+
+lm          [module [..]]
+	List modules.
+
+lmo         [module [..]]
+	List modules and their segments.
+
+ln          [addr/sym [..]]
+	List symbols near to the address. Default address is CS:EIP.
+
+ls          [addr]
+	Source.
+
+m           <addr>
+	Display information about that piece of memory.
+
+r            [reg [newval]]
+	Show or set register(s) - active reg set.
+
+rg           [reg [newval]]
+	Show or set register(s) - guest reg set.
+
+rg32
+	Show 32-bit guest registers.
+
+rg64
+	Show 64-bit guest registers.
+
+rh            [reg [newval]]
+	Show or set register(s) - hypervisor reg set.
+
+rt
+	Toggles terse / verbose register info.
+
+s            [options] <range> <pattern>
+	Continue last search.
+
+sa           <range> <pattern>
+	Search memory for an ascii string.
+
+sb          <range> <pattern>
+	Search memory for one or more bytes.
+
+sd          <range> <pattern>
+	Search memory for one or more double words.
+
+sq          <range> <pattern>
+	Search memory for one or more quad words.
+
+su          <range> <pattern>
+	Search memory for an unicode string.
+
+sw          <range> <pattern>
+	Search memory for one or more words.
+
+t
+	Instruction trace (step into).
+
+u           [addr]
+	Unassemble.
+
+u64         [addr]
+	Unassemble 64-bit code.
+
+u32         [addr]
+	Unassemble 32-bit code.
+
+u16         [addr]
+	Unassemble 16-bit code.
+
+uv86        [addr]
+	Unassemble 16-bit code with v8086/real mode addressing.
+
+
+External Commands and Functions:
+
+.injecterror
+	Inject error into I/O subsystem.
+
+.patmon
+	Enable patching.
+
+.patmoff
+	Disable patching.
+
+.csamon
+	Enable CSAM code scanning.
+
+.csamoff
+	Disable CSAM code scanning.
+
+.remstep     [on/off]
+	Enable or disable the single stepping with logged
+	disassembly. If no arguments show the current state.
+
+.pgmram
+	Display the ram ranges.
+
+.pgmsync
+	Sync the CR3 page.
+
+.pgmerror
+	Enables inject runtime of errors into parts of PGM.
+
+.pgmerroroff
+	Disables inject runtime errors into parts of PGM.
+
+.pgmsyncalways
+	Toggle permanent CR3 syncing.
+
+.pgmphystofile
+	Save the physical memory to file.
+
+.pgmpoolcheck
+	Check the pgm pool pages.
+
+.stats       [pattern]
+	Display statistics.
+
+.statsreset [pattern]
+	Resets statistics.
+
+
+Operators:
+
+-	Unary    Unary minus.
++	Unary    Unary plus.
+!	Unary    Boolean not.
+~	Unary    Bitwise complement.
+:   Binary Far pointer.
+%   Unary  Flat address.
+%%  Unary  Physical address.
+#   Unary  Flat host address.
+#%% Unary  Physical host address.
+$   Unary  Reference a variable.
+@   Unary  Reference a register.
+*   Binary Multiplication.
+/   Binary Division.
+%   Binary Modulus.
++   Binary Addition.
+-   Binary Subtraction.
+<<  Binary Bitwise left shift.
+>>  Binary Bitwise right shift.
+&   Binary Bitwise and.
+^   Binary Bitwise exclusiv or.
+|   Binary Bitwise inclusive or.
+&&  Binary Boolean and.
+||  Binary Boolean or.
+L   Binary Range elements.
+LB  Binary Range bytes.
+T   Binary Range to.

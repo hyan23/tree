@@ -1,0 +1,412 @@
+; tree/kernel/basec.s0
+; Author: hyan23
+; Date: 2016.04.30
+;
+
+; 实现最基本的字符和字符串打印例程
+; 这段代码存放在硬盘逻辑扇区10, 启动时, 被加载至0x9000
+; PUT_CHAR1: 0x9004, PUT_STR1: 0x900a
+
+%include "../boot/gdt.ic"
+%include "../boot/absc.ic"
+%include "../inc/nasm/spin.ic"
+%include "../inc/nasm/io/def0.ic"
+
+
+; header
+_TREE_LEN DD TREE_END
+
+; constant
+    THIS_SEL    EQU        BASEC_SEL
+    THIS_SEL0    EQU        BASEC_SEL0
+
+; export
+TREE_ABSSYM put_char, PUT_CHAR1, THIS_SEL
+TREE_ABSSYM put_str, PUT_STR1, THIS_SEL
+TREE_ABSSYM set_color, SET_COLOR1, THIS_SEL
+TREE_ABSSYM clr_row, CLR_ROW1, THIS_SEL
+TREE_ABSSYM clr_scr, CLR_SCR1, THIS_SEL
+TREE_ABSSYM goto_xy, GOTO_XY1, THIS_SEL
+
+[BITS 32]
+
+                                                 ; 同步
+PUT_CHAR1:
+    call near PUT_CHAR0
+    retf
+
+
+PUT_STR1:
+    TREE_SPIN_WAIT THIS_SEL0, put_str_lock
+    TREE_SPIN_IN THIS_SEL0, put_str_lock
+    call near PUT_STR0
+    TREE_SPIN_LEAVE THIS_SEL0, put_str_lock
+    retf
+
+
+SET_COLOR1:
+    call near SET_COLOR0
+    retf
+
+
+CLR_ROW1:
+    call near CLR_ROW0
+    retf
+
+
+CLR_SCR1:
+    call near CLR_SCR0
+    retf
+
+
+GOTO_XY1:
+    call near GOTO_XY0
+    retf
+
+
+GET_CURSOR:
+    TREE_SPIN_WAIT THIS_SEL0, get_cursor_lock
+    TREE_SPIN_IN THIS_SEL0, get_cursor_lock
+    call near GET_CURSOR0
+    TREE_SPIN_LEAVE THIS_SEL0, get_cursor_lock
+    ret
+
+
+SET_CURSOR:
+    TREE_SPIN_WAIT THIS_SEL0, set_cursor_lock
+    TREE_SPIN_IN THIS_SEL0, set_cursor_lock
+    call near SET_CURSOR0
+    TREE_SPIN_LEAVE THIS_SEL0, set_cursor_lock
+    ret
+
+
+PUT_CHAR0:
+
+    pusha
+    push ds
+
+    call near GET_CURSOR                         ; 返回值保存在 ax
+    mov bx, ax                                   ; bx: 偏移
+
+    cmp cl, VK_BACK                              ; 退格
+    jz .put_back
+
+    cmp cl, ASCLL_CR                             ; 回车
+    jz .put_0d
+
+    cmp cl, ASCLL_LF                             ; 换行
+    jz .put_0a
+
+    jmp .put_basic                               ; 普通字符
+
+.put_back:
+    mov cl, 80                                   ; 最多回退一行
+    div cl
+    cmp ah, 0
+    jz .end
+
+    dec bx
+    jmp near .end
+
+.put_0d:
+    mov bl, 80                                   ; 计算行数
+    div bl                                       ; /80, 丢弃
+    mul bl                                       ; *80, return
+    mov bx, ax
+    jmp near .end
+
+.put_0a:
+    add bx, 80                                   ; 增加一行
+    jmp near .end
+
+.put_basic:
+    mov ax, THIS_SEL0                            ; 读取本次显示属性
+    mov ds, ax
+    mov ch, [ds:color]
+
+    mov ax, VRAMC_SEL
+    mov ds, ax
+    shl bx, 1                                    ; 实际偏移量
+    mov [ds:bx], cx
+
+    shr bx, 1
+    add bx, 1
+
+.end:
+    cmp bx, 2000                                 ; 判断是否需要滚屏
+    jb .fin
+
+    call near ROLL_SCR
+    mov bx, 1920
+
+.fin:
+    mov ax, bx                                   ; 更新光标
+    call near SET_CURSOR
+
+    pop ds
+    popa
+
+    ret
+
+
+PUT_STR0:
+
+    push ebx
+    push ecx
+
+.s0:
+    cmp byte [ds:ebx], PCHAR_EOS                 ; 字符串结束
+    jz .end
+    cmp byte [ds:ebx], PCHAR_ESCAPE              ; 转义字符
+    jnz .basic                                   ; 不处理
+
+.escape:
+    inc ebx                                      ; 查看后一个字符
+    cmp byte [ds:ebx], PCHAR_EOS                 ; 遇0丢弃
+    jz .end
+    cmp byte [ds:ebx], 'n'                       ; 如果构成转义
+    jnz .basic                                   ; 否则直接打印
+    mov byte [ds:ebx], ASCLL_CR                  ; 替换
+    dec ebx
+    mov byte [ds:ebx], ASCLL_LF
+
+.basic:
+    mov cl, [ds:ebx]
+    call near PUT_CHAR0
+    inc ebx
+    jmp near .s0
+
+.end:
+    pop ecx
+    pop ebx
+
+    ret
+
+
+; void set_color(uint8:cl:color);
+; 设置显示属性，再次设置前有效。
+; 闪烁, 背景, 高亮, 前景
+; F     RGB  I    rgb
+
+SET_COLOR0:
+
+    push ax
+    push ds
+
+    mov ax, THIS_SEL0
+    mov ds, ax
+
+    mov [ds:color], cl
+
+    pop ds
+    pop ax
+
+    ret
+
+
+
+; void CLR_ROW1(uint8:al:row);
+; 清空一行内容(屏幕)
+
+CLR_ROW0:
+
+    pusha
+    push ds
+
+    cmp al, 24                                   ; 参数校验
+    ja .fin
+
+    mov cx, VRAM_CH_SEG
+    mov ds, cx
+
+    mov cl, 80                                   ; 计算索引
+    mul cl
+    call near SET_CURSOR
+
+    shl ax, 1                                    ; 实际的偏移地址
+    mov bx, ax
+
+    mov cx, 80
+.s0:
+    mov byte [ds:bx], ' '                        ; 用空格填充
+    inc bx
+    mov byte [ds:bx], 0x07                       ; 0000_0111 黑底白字
+    inc bx
+    loop .s0
+
+.fin:
+    pop ds
+    popa
+
+    ret
+
+
+; void CLR_SCR1(void);
+; 清空整个屏幕
+
+CLR_SCR0:
+
+    pushad
+    push ds
+
+    mov cx, VRAMC_SEL
+    mov ds, cx
+
+    xor bx, bx
+    mov ecx, 2000
+
+.s0:
+    mov byte [ds:bx], ' '
+    inc bx
+    mov byte [ds:bx], 0x07
+    inc bx
+    loop .s0
+
+    xor ax, ax                                   ; 复位光标
+    call near SET_CURSOR
+
+    pop ds
+    popad
+
+    ret
+
+
+; void GOTO_XY1(uint8:cl:X, uint8:ch:Y);
+; 设定光标位置(0, 0) - (24, 79)
+
+GOTO_XY0:
+
+    push ax
+    push cx
+
+    cmp cl, 24                                   ; 参数校验
+    ja .fin
+    cmp ch, 79
+    ja .fin
+
+    mov ax, 80                                   ; cl * 80 + ch
+    mul cl
+    shr cx, 8
+    add ax, cx
+
+    call near SET_CURSOR
+
+.fin:
+    pop cx
+    pop ax
+
+    ret
+
+
+; ret: ax
+
+GET_CURSOR0:
+
+    push dx
+
+                                                 ; 读入索引寄存器的值
+                                                 ; 写入端口: 0x03d4, 读取端口: 0x03d5
+                                                 ; 高八位数据: 0x000e, 低八位数据: 0x000f
+
+    mov al, 0x0e                                 ; 选择高位
+    mov dx, 0x03d4
+    out dx, al
+
+    mov dx, 0x03d5                               ; 读数据
+    in al, dx
+    mov ah, al
+
+    mov dx, 0x03d4                               ; 选择低位
+    mov al, 0x0f
+    out dx, al
+
+    mov dx, 0x03d5                               ; 读数据
+    in al, dx
+
+    pop dx
+
+    ret
+
+
+; in: ax
+
+SET_CURSOR0:
+
+    push ax
+    push cx
+    push dx
+
+    mov cx, ax
+
+    mov al, 0x0e                                 ; 选择高位
+    mov dx, 0x03d4
+    out dx, al
+
+    mov al, ch                                   ; 写数据
+    mov dx, 0x03d5
+    out dx, al
+
+    mov al, 0x0f                                 ; 选择低位
+    mov dx, 0x03d4
+    out dx, al
+
+    mov al, cl                                   ; 写数据
+    mov dx, 0x03d5
+    out dx, al
+
+    pop dx
+    pop cx
+    pop ax
+
+    ret
+
+
+ROLL_SCR:
+
+    pushad
+    push ds
+    push es
+
+    mov ax, VRAMC_SEL
+    mov ds, ax
+    mov es, ax
+
+    mov esi, 0xa0                                ; 第二行
+    mov edi, 0x00                                ; 第一行
+    mov ecx, 1920                                ; 4000 - 160 = 3840
+
+    cld                                          ; 正向
+    rep movsw                                    ; 传送数据
+
+    mov ebx, 3840                                ; 清除屏幕最底一行
+    mov ecx, 40
+
+.clear:
+    mov dword [ds:ebx], 0x07200720               ; 0x20, 0000_0111
+    inc ebx
+    inc ebx
+    inc ebx
+    inc ebx
+    loop .clear
+
+    pop es
+    pop ds
+    popad
+
+    ret
+
+
+                                                 ; 现阶段显示属性
+color    DB    0x07
+
+                                                 ; 自旋锁
+TREE_SPIN_LOCK put_char_lock
+TREE_SPIN_LOCK put_str_lock
+TREE_SPIN_LOCK set_color_lock
+TREE_SPIN_LOCK clr_row_lock
+TREE_SPIN_LOCK clr_scr_lock
+TREE_SPIN_LOCK goto_xy_lock
+TREE_SPIN_LOCK get_cursor_lock
+TREE_SPIN_LOCK set_cursor_lock
+
+TREE_END:

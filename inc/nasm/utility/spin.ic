@@ -1,0 +1,25 @@
+; tree/inc/nasm/utility/spin.ic
+; Author: hyan23
+; Date: 2016.08.08
+;
+
+%ifndef _SPIN_IC1_
+%define _SPIN_IC1_
+
+; uint16:ax SPINCreate(uint32:eax:dat);
+    __TREE_IMPORT @spin0, 'SPINCreate', SPINCreate
+
+; void SPINDestroy(ds:spin);
+    __TREE_IMPORT @spin1, 'SPINDestroy', SPINDestroy
+
+; void SPINLock(ds:spin);
+    __TREE_IMPORT @spin2, 'SPINLock', SPINLock
+
+; void SPINFree(ds:spin);
+    __TREE_IMPORT @spin3, 'SPINFree', SPINFree
+
+; uint32:eax SPINGetDat(ds:spin);
+    __TREE_IMPORT @spin4, 'SPINGetDat', SPINGetDat
+
+
+%endif ; _SPIN_IC1_

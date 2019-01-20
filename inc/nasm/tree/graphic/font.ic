@@ -1,0 +1,19 @@
+; tree/inc/nasm/tree/graphic/font.ic
+; Author: hyan23
+; Date: 2016.08.07
+;
+
+%ifndef _FONT_IC_
+%define _FONT_IC_
+
+; uint16:ax FRenderText(uint32*ds:ebx:text,
+;    uint8:ch:backcolor, uint8:cl:forecolor );
+    __TREE_IMPORT @1, 'FDestroyText', FDestroyText
+
+; void FDestroyText(uint16*:ds:text );
+    __TREE_IMPORT @0, 'FRenderText', FRenderText
+
+
+
+
+%endif ; _FONT_IC_

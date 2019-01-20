@@ -1,0 +1,254 @@
+; tree/inc/nasm/tree.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+; [TREE]应用程序开发: NASM语法
+
+
+%ifndef _TREE_IC_
+%define _TREE_IC_
+
+%include "../boot/absc.ic"
+%include "../kernel/pci0.ic"
+%include "../kernel/xfile.ic"
+%include "../kernel/private.ic"
+%include "../kernel/exec.ic"
+%include "../inc/nasm/nasm.ic"
+%include "../inc/nasm/import.ic"
+%include "../inc/nasm/export.ic"
+%include "../inc/nasm/io/def0.ic"
+%include "../inc/nasm/xfile.s0"
+
+
+; 字符串, 缓冲区
+
+%macro TREE_STRING 2
+
+    %1 DB %2, PCHAR_EOS
+
+%endmacro ; TREE_STRING
+
+                                                 ; 定长
+%macro TREE_STRING0 3
+
+    %strlen strlen_ %2
+    %1 DB %2
+    .PADDING%1 TIMES ( %3 - strlen_) DB PCHAR_EOS
+
+%endmacro ; TREE_STRING0
+
+
+%macro TREE_SZBUF 2
+
+    %1 TIMES %2 DB PCHAR_EOS
+
+%endmacro ; TREE_SZBUF
+
+
+; 数据, 过程
+
+%macro TREE_LOCATE_DATA 0
+
+    push ax
+    mov ax, [ss:(TREE_USR_STACK - 1 - 4)]
+    mov ds, ax
+    mov ax, [ds:TREE_PROC_PRIVATE_GD_SEL_OFS]
+    mov ds, ax
+    pop ax
+
+%endmacro ; TREE_LOCATE_DATA
+
+
+
+; 关于动态符号调用的嵌套:
+; 应用程序使用整个进程空间定位符号间接调用数据, 我在创建任务
+; 的时候把进程空间的选择子压入了栈顶(初始栈), 所以本任务可以
+; 正确地完成外部调用。这样做导致了符号无法嵌套, 即被调用的
+; 外部符号再次调用外部符号, 因为两次使用的是同一套栈。进程空间
+; 已经被继承下去了。我的解决方案是: 在符号链接时同时把目标符号
+; 所属进程的进程空间选择子链接进来,在外部调用的时候, 临时修改
+; 本任务栈底使之指向目标符号的进程空间, 远返回后还原。尽管这样
+; 会产生一些额外的开销, 我也想不到其他更好的办法了。实现的代码
+; 就是下面这个宏, 同时我在导入符号宏里新增了一个字段即目标
+; 代码的进程空间的选择子, 偏移量是+6。
+
+
+%macro TREE_CALL 1
+
+    push gs
+
+    ; 2016.07.20
+    ; 导致调用无法重入。
+    ;push ax
+    ;mov ax, [ss:(TREE_USR_STACK - 1 - 4)]
+    ;mov gs, ax
+    ;xchg ax, [gs:ACCESS_SRC(6 + %1)]
+    ;mov [ss:TREE_USR_STACK - 1 - 4)], ax
+    ;pop ax
+
+                                                 ; 使用栈传递参数, 参数偏移+2
+    push WORD [ss:(TREE_USR_STACK - 1 - 4)]
+
+    push ax
+    mov ax, [ss:(TREE_USR_STACK - 1 - 4)]
+    mov gs, ax
+    mov ax, [gs:ACCESS_SRC(6 + %1)]
+    mov [ss:(TREE_USR_STACK - 1 - 4)], ax
+    pop ax
+
+    call far [gs:ACCESS_SRC(%1)]
+
+    ;push ax
+    ;mov ax, [ss:(TREE_USR_STACK - 1 - 4)]
+    ;xchg ax, [gs:ACCESS_SRC(6 + %1)]
+    ;mov [ss:(TREE_USR_STACK - 1 - 4)], ax
+    ;pop ax
+
+    pop WORD [ss:(TREE_USR_STACK - 1 - 4)]
+
+    pop gs
+
+%endmacro ; TREE_CALL
+
+
+%macro TREE_SLEEP 1                              ; 睡眠
+
+    push ecx
+    mov ecx, %1
+    TREE_PCI0CALL TREE_PCI0_SEL_INSTRUCTION_SLEEP
+    pop ecx
+
+%endmacro ; TREE_SLEEP
+
+
+%macro TREE_HUNG 0                               ; 挂起
+
+    TREE_PCI0CALL TREE_PCI0_SEL_INSTRUCTION_HUNG
+
+%endmacro ; TREE_HUNG
+
+
+%macro TREE_EXIT 0
+
+    TREE_PCI0CALL TREE_PCI0_SEL_INSTRUCTION_FIN
+
+%endmacro ; TREE_EXIT
+
+
+%macro TREE_EXIT0 2
+
+%if (( %1) != TREE_EXEC_RET_COM && ( %1) != TREE_EXEC_RET_LIB)
+
+    %error "the first parameter must be: TREE_EXEC_RET_COM \
+or TREE_EXEC_RET_LIB"
+
+%endif
+
+%if (( %2) != eax)
+
+    %error 'Set ExitCode To EAX'
+
+%endif
+
+    mov ebx, (%1)
+    TREE_ABSCALL TREE_TERMINATE
+
+%endmacro ; TREE_EXIT0
+
+
+; 结构, 划分
+
+%macro ___TREE_CODE_BEGIN_ 0
+
+[BITS 32]
+
+    SECTION text ALIGN=32 VSTART=0
+    %define _CODE_BEGAN_                         ; Assure sequence
+
+%endmacro ; ___TREE_CODE_BEGIN_
+
+
+%macro ___TREE_CODE_END_ 0
+
+    SECTION ENDS
+
+%endmacro ; ___TREE_CODE_END_
+
+
+%macro ___TREE_DATA_BEGIN_ 0
+
+    %ifndef _CODE_BEGAN_
+
+        %error 'Put your DATA after the CODE'
+
+    %endif ; _CODE_BEGAN_
+
+    SECTION data ALIGN=32 VSTART=0
+
+%endmacro ; ___TREE_DATA_BEGIN_
+
+
+%macro ___TREE_DATA_END_ 0
+
+    SECTION END
+    _TREE_END:
+
+%endmacro ; __TREE_END
+
+
+; 强制
+
+%macro TREE_NAME 1
+
+    %ifdef _TREE_NAME_
+
+        %error 'Multiple uses of TREE_NAME detected'
+
+    %endif ; _TREE_NAME_
+
+    %ifnstr %1
+
+        %error 'TREE_NAME requires a string as its parameter'
+
+    %endif ; STR(%1)
+
+    %strlen _tree_name_len %1
+
+    %if (15 < _tree_name_len)
+
+        %error 'Please ensure strlen(TREE_NAME) <= 15'
+
+    %endif ; strlen(TREE_NAME) < 16
+
+    _TREE_NAME DB %1
+    PADDING TIMES (TREE_XFILE_NAME_LEN - \
+        _tree_name_len) DB PCHAR_EOS
+
+    %define _TREE_NAME_                          ; Avoid repeating using
+
+%endmacro ; TREE_NAME
+
+
+%macro TREE_VER 1
+
+    %ifdef _TREE_VER_
+
+        %error 'Multiple uses of TREE_VER detected'
+
+    %endif ; _TREE_VER_
+
+    %ifnnum %1
+
+        %error 'TREE_VER requires a integer as its parameter'
+
+    %endif ; NUM(%1)
+
+    _TREE_VER DD (%1)
+
+    %define _TREE_VER_                           ; Avoid repeating using
+
+%endmacro ; TREE_VER
+
+
+%endif ;_TREE_IC_

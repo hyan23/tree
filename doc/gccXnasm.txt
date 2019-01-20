@@ -1,0 +1,85 @@
+// hyan23編輯於2016.05.02
+// GCC-NASM联合编译
+// www.myexception.cn
+//
+
+1. 建立示例工程
+
+ Makefile的内容如下：
+
+all:
+	nasm -f elf hello.asm -o hello.o
+	gcc -o main main.c hello.o
+
+
+2. NASM和C互相调用对方的函数
+
+extern print_helloworld
+
+[section .text]
+global print_two_hello_world
+
+print_two_hello_world:
+	call print_helloworld
+	call print_helloworld
+
+
+#include <stdio.h>
+
+extern void print_two_hello_world();
+
+char *strhello = "Hello,world!\n";
+
+void print_helloworld()
+{
+    printf ("%s",strhello);
+}
+
+int main()
+{
+    print_two_hello_world();
+    return 0;
+}
+
+
+3.NASM和C互相访问对方的变量
+
+global string
+extern strhello
+
+[section .data]
+string:
+	db 'I am Chinese.',0x0A,0x0
+
+[section .text]
+	global print_hello
+	global cpy_mem
+
+print_hello:
+	mov edx, 13
+	mov ecx,[strhello]
+	mov ebx,1
+	mov eax,4
+	int 0x80
+
+
+#include "stdio.h"
+#include "string.h"
+
+extern char *string;
+extern void print_hello();
+extern cpy_mem (void *dest, int len);
+
+char *strhello = "Hello,world!\n";
+char *str = NULL;
+
+int
+main()
+{
+	printf("%x\n",&string);
+	str = &string;
+	printf("%s", str);
+
+	print_hello();
+	return 0;
+}

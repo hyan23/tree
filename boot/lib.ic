@@ -1,0 +1,78 @@
+; tree/boot/LIB.ic
+; Author: hyan23
+; Date: 2016.06.13
+;
+
+; 在静态存储区创建的变量。
+
+%ifndef _LIB_IC_
+%define _LIB_IC_
+
+%include "../boot/args.ic"
+%include "../inc/nasm/io/def0.ic"
+
+; 内核tss大小, 实际上只使用103字节
+%define TREE_LIB_KERNEL_TSS_BYTES 128
+
+; 仅允许在这里创建32字节长的定长字符串
+%define LIB_STR_LEN 32
+
+; 创建定长字符串的宏
+%macro LIB_STRING 2
+
+    %strlen strlen_ %2
+    %1 DB %2
+    .PADDING%1 TIMES (LIB_STR_LEN - strlen_) DB PCHAR_EOS
+
+%endmacro ; TREE_STRING0
+
+
+    TREE_LIB_PROCTAB_OFS        EQU     0
+
+    TREE_LIB_SYMBOLTAB_OFS      EQU     2 + TREE_LIB_PROCTAB_OFS
+
+    TREE_LIB_CALLGATE_SEL_OFS   EQU     2 + TREE_LIB_SYMBOLTAB_OFS
+
+    TREE_LIB_KERNEL_TSS_SEL_OFS EQU     TREE_CALLGATE_SEL_TAB_BYTES + \
+                            TREE_LIB_CALLGATE_SEL_OFS
+
+    TREE_LIB_KERNEL_TSS_OFS     EQU     2 + TREE_LIB_KERNEL_TSS_SEL_OFS
+
+    TREE_LIB_KERNEL_TCB_OFS     EQU     TREE_LIB_KERNEL_TSS_BYTES + \
+                            TREE_LIB_KERNEL_TSS_OFS
+
+    TREE_LIB_TCB_CHAIN_HEAD_OFS EQU     2 + TREE_LIB_KERNEL_TCB_OFS
+
+    TREE_LIB_CURRENT_TASK_OFS   EQU     2 + TREE_LIB_TCB_CHAIN_HEAD_OFS
+
+    TREE_LIB_TASK_COUNT_OFS     EQU     2 + TREE_LIB_CURRENT_TASK_OFS
+
+    TREE_LIB_ACTIVE_COUNT_OFS   EQU     2 + TREE_LIB_TASK_COUNT_OFS
+
+    TREE_LIB_TICK_COUNT_OFS     EQU     2 + TREE_LIB_ACTIVE_COUNT_OFS
+
+    TREE_LIB_TIME_STAMP_OFS     EQU     4 + TREE_LIB_TICK_COUNT_OFS
+
+    TREE_LIB_NOWTIME_OFS        EQU     4 + TREE_LIB_TIME_STAMP_OFS
+
+    TREE_LIB_TODAY_OFS          EQU     3 + TREE_LIB_NOWTIME_OFS
+
+    TREE_LIB_EXCP_OFS           EQU     3 + TREE_LIB_TODAY_OFS
+
+    TREE_LIB_TMP_BYTE_OFS       EQU     LIB_STR_LEN + TREE_LIB_EXCP_OFS
+
+    TREE_LIB_TMP_WORD_OFS       EQU     2 + TREE_LIB_TMP_BYTE_OFS
+
+    TREE_LIB_TMP_DWORD_OFS      EQU     2 + TREE_LIB_TMP_WORD_OFS
+
+
+    TREE_LIB_KBD_DAT_SEL_OFS    EQU     4 + TREE_LIB_TMP_DWORD_OFS
+
+    TREE_LIB_MOUSE_DAT_SEL_OFS  EQU     2 + TREE_LIB_KBD_DAT_SEL_OFS
+
+    TREE_LIB_SH_TCB_SEL_OFS     EQU     2 + TREE_LIB_MOUSE_DAT_SEL_OFS
+
+    TREE_LIB_RESERVED_OFS       EQU     2 + TREE_LIB_SH_TCB_SEL_OFS
+
+
+%endif ; _LIB_IC_

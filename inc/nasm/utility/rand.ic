@@ -1,0 +1,17 @@
+; tree/inc/nasm/utility/rand.ic
+; Author: hyan23
+; Date: 2016.05.05
+;
+
+%ifndef _RAND_IC_
+%define _RAND_IC_
+
+; void srand(uint32:eax:seed);
+    __TREE_IMPORT @0, 'srand', srand
+
+; uint32:eax rand(void);
+    __TREE_IMPORT @1, 'rand', rand
+
+
+
+%endif ; _RAND_IC_

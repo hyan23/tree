@@ -1,0 +1,466 @@
+; tree/kernel/memory.s0
+; Author: hyan23
+; Date: 2016.05.28
+;
+
+
+%include "../boot/boot.ic"
+%include "../boot/gdt.ic"
+%include "../boot/bits.ic"
+%include "../boot/args.ic"
+%include "../boot/absc.ic"
+%include "../inc/nasm/spin.ic"
+%include "../inc/nasm/nasm.ic"
+
+
+; header
+    _TREE_LEN       DD      TREE_END
+
+; constant
+    THIS_SEL        EQU     MEMORY_SEL
+    THIS_SEL0       EQU     MEMORY_SEL0
+
+; export
+TREE_ABSSYM MEMCPY, MemCpy, THIS_SEL
+TREE_ABSSYM ZEROMEMORY, ZeroMemory, THIS_SEL
+
+TREE_ABSSYM ALLOC_MEMORY, AllocMemory, THIS_SEL
+TREE_ABSSYM ALLOC_MEMORY0, AllocMemory0, THIS_SEL
+TREE_ABSSYM ALLOC_MEMORY1, AllocMemory1, THIS_SEL
+TREE_ABSSYM ALLOC_MEMORY2, AllocMemory2, THIS_SEL
+
+TREE_ABSSYM FREE_MEMORY, FreeMemory, THIS_SEL
+
+
+[BITS 32]
+
+
+; void MemCpy(uint32*:ds:esi src, uint32*:es:edi dst,
+;    uint32:ecx bytes);
+; in: ds:esi: src, es:edi: dst, ecx: bytes
+; ret: none
+
+MemCpy:
+
+    pushad
+.s0:                                             ; 搬运
+    mov al, [ds:esi]
+    mov [es:edi], al
+    inc esi
+    inc edi
+    loop .s0
+
+    popad
+    retf
+
+
+; void ZeroMemory(uint32*ds:ebx:__, uint32:ecx:bytes);
+; in: ds:ebx: base, ecx: bytes
+; ret: none
+
+ZeroMemory:
+
+    push ebx
+    push ecx
+
+.zero:                                           ; 置零
+    mov BYTE [ds:ebx], 0
+    inc ebx
+    loop .zero
+
+    pop ecx
+    pop ebx
+
+    retf
+
+
+
+; 内存管理
+
+; AllocMemory0, This for Allocting Data
+; in: ebx, Privilege Level, ecx, bytes
+
+AllocMemory0:
+
+    push ebx
+
+    shl ebx, 4                                   ; 0 - 3: type, 4 - 5: DPL
+    or ebx, 0010b                                ; 可读可写默认扩展
+    call THIS_SEL:AllocMemory
+
+    pop ebx
+    retf
+
+
+; AllocMemory1, This for Allocting Code
+; in: ebx, Privilege Level, ecx, bytes
+
+AllocMemory1:
+
+    push ebx
+
+    shl ebx, 4
+    or ebx, 1000b                                ; 只执行的代码
+    call THIS_SEL:AllocMemory
+
+    pop ebx
+    retf
+
+
+; AllocMemory2, This for Allocting Stack
+; in: ebx, Privilege Level, ecx, bytes
+
+AllocMemory2:
+
+; TODO: 申请栈空间, 修改descriptor
+
+
+
+; uint16:ax AllocMemory(uint4:ebx:type, uint32:ecx:bytes);
+; in: ebx(0 - 3): type, 4 - 5: DPL, ecx: bytes to apply
+; ret: eax(0 - 15): the valid selector if succeeded
+
+AllocMemory:
+
+    push ebx
+
+    cmp ecx, 1024 * TREE_AVL_MEM / 2             ; 最大不超过最大内存容量的一半
+    ja .overflow
+
+    cmp ecx, 1024 * TREE_MEM_BOUNDS              ; 请求的内存小于界限
+    jnb .page                                    ; 使用小粒度
+
+.min:                                            ; x0_xx(dpl)_xxxx(type)
+    and ebx, 0xffffffbf                          ; 粒度: TREE_MEM_MIN
+    call near _alloc_
+    jmp near .fin
+
+.page:
+    or ebx, 0x00000040                           ; 粒度: 4k
+    call near _alloc_
+
+.fin:
+    pop ebx
+
+    retf
+
+.overflow:
+    xor ax, ax
+    jmp near .fin
+
+
+
+; uint16:ax _alloc_(uint4:ebx:type, uint32:ecx:bytes);
+; in: ebx(0 - 3): type, (4 - 5): DPL, 6: grading, ecx: bytes to apply
+; ret: ax(0 - 15): the valid selector if succeeded
+
+_alloc_:
+
+    push ebx
+    push ecx
+    push edx
+    push ds                                      ; push 4
+
+    TREE_SYNC_BEGIN THIS_SEL0, _alloc_lock
+
+    push eax                                     ; 保护eax(16 - 31)
+    test ebx, 0x00000040                         ; 粒度: 4k/MIN
+    jz .min
+    mov edx, 0x1000
+    jmp near .calculate
+.min:
+    mov edx, TREE_MEM_MIN
+                                                 ; make_seg_descriptor应用
+.calculate:                                      ; 按页分配界限: 0x999 + (pgs * 0x1000)
+    cmp ecx, edx                                 ; 计算要分配多少个页/MIN
+    ja .gt1
+    mov eax, 1                                   ; <=, 1
+    jmp near .j0
+
+.gt1:
+    mov eax, ecx
+    mov ecx, edx
+    xor edx, edx
+    div ecx
+    cmp edx, 0                                   ; 不被整除额外
+    jz .j0
+    add eax, 1
+
+.j0:
+    mov ecx, eax                                 ; 页数/双字
+    push ecx
+
+    mov ax, BITS_SEL                             ; 在位图查找连续的内存
+    mov ds, ax
+
+    mov eax, TREE_MEM_FIXED / 4                  ; 跳过固定区域(小粒度位图)
+    mov ecx, (TREE_AVL_MEM - TREE_MEM_PAGED - TREE_MEM_FIXED) \
+        * 1024 / TREE_MEM_MIN                    ; 小粒度位数
+    test ebx, 0x00000040
+    jz .j1                                       ; 大粒度位图
+    add eax, ecx
+    mov ecx, TREE_MEM_PAGED / 4                  ; 大粒度位数
+
+.j1:
+    xor edx, edx                                 ; edx 计数
+.s1:
+    bt [ds:TREE_MEM_BITS_OFS], eax
+    jnc .ic                                      ; 找到一个空闲页, count
+.reset:
+    xor edx, edx                                 ; 非空闲页, reset
+    jmp near .next
+.ic:
+    inc edx
+
+.next:
+    inc eax
+    cmp edx, [ss:esp]                            ; 数量满足要求
+    jz .enough
+    loop .s1
+    jmp near .overflow0                          ; 无法完成
+
+.enough:
+    push eax
+
+    mov ecx, [ss:(4 + esp)]                      ; 计算物理地址
+    sub eax, ecx
+
+    test ebx, 0x00000040
+    jz .min0                                     ; 位增量
+    sub eax, TREE_MEM_FIXED / 4 + (TREE_AVL_MEM - \
+        TREE_MEM_PAGED - TREE_MEM_FIXED) * 1024 / TREE_MEM_MIN
+    mov ecx, 0x1000
+    mul ecx                                      ; +基地址
+    add eax, 1024* (TREE_AVL_MEM - TREE_MEM_PAGED)
+    jmp near .install
+
+.min0:
+    sub eax, TREE_MEM_FIXED / 4                  ; 位增量
+    mov ecx, TREE_MEM_MIN
+    mul ecx                                      ; +基地址
+    add eax, 1024 * TREE_MEM_FIXED
+
+.install:                                        ; edx:eax, edx: 0
+    mov ecx, [ss:(4 + esp)]
+    call THIS_SEL:make_seg_descriptor            ; 生成描述符
+    TREE_ABSCALL ADD_GDT_DESCRIPTOR              ; 在系统注册
+    cmp ax, 0                                    ; 表满
+    jz .gdt_overflow
+
+    pop ebx                                      ; 位图置位
+    pop ecx
+    sub ebx, ecx
+.s0:
+    bts [ds:TREE_MEM_BITS_OFS], ebx
+    inc ebx
+    loop .s0
+
+    mov cx, ax                                   ; 保护eax(16 - 31)
+    pop eax
+    mov ax, cx
+
+.fin:
+    TREE_SYNC_END THIS_SEL0, _alloc_lock
+
+    pop ds
+    pop edx
+    pop ecx
+    pop ebx
+
+    ret
+
+.gdt_overflow:                                   ; 垃圾数据
+    pop eax
+.overflow0:
+    pop ecx
+    pop eax
+
+    xor ax, ax
+    jmp near .fin
+
+
+; uint64:edx:eax make_seg_descriptor(uint32:eax base,
+;    ebx:type, uint20:cx:pgs/MS);
+; in: eax: baseADS, ebx(0 - 3):type, (4 - 5): dpl,
+;    6: grading, ecx:pages/MS
+; ret: edx:eax:descirptor
+
+make_seg_descriptor:
+
+    push ebx
+    push ecx
+                                                 ; 低位: eax
+    mov ebx, eax                                 ; 32位线性基地址
+    shl eax, 16                                  ; eax(0 - 15) -> (16 - 31)
+    mov ax, cx                                   ; 段界限: 页数 - 1
+    dec ax
+                                                 ; 高位: edx
+    mov edx, ebx                                 ; 基地址(24 - 31)
+    and edx, 0xff000000
+    and ecx, 0x000f0000                          ; 段界限(16 - 19)
+    or edx, ecx
+
+    mov ecx, [ss:(4 + esp)]                      ; 查看粒度
+    test ecx, 0x00000040
+    jz .littlesize
+    or edx, 0x00c09000                           ; 设置好的属性, 包括: G, D/B, l, avl
+    jmp near .j                                  ; P, DPL(最高, 保留), S
+.littlesize:
+    or edx, 0x00409000                           ; 小粒度: g
+
+    push eax                                     ; 重新计算段界限
+    push edx
+    mov eax, TREE_MEM_MIN
+    mov ecx, [ss:(8 + esp)]                      ; TREE_MEM_MIN * MS
+    mul ecx
+    mov ecx, eax                                 ; 保护eax(16 - 31)
+    pop edx
+    pop eax
+    mov ax, cx                                   ; 段界限(0 - 15)
+    dec ax
+    and ecx, 0x000f0000                          ; 段界限(16 - 19)
+    and edx, 0xfff0ffff
+    or edx, ecx
+
+.j:
+    and ebx, 0x00ff0000                          ; ebx(16 - 26) -> edx(0 - 7)
+    shr ebx, 16
+    or edx, ebx
+
+    mov ebx, [ss:(4 + esp)]                      ; 描述符特权级
+    and ebx, 0x00000030                          ; 清除其他位
+    shl ebx, 9                                   ; ebx(4 - 5) -> edx(13 - 14)
+    or edx, ebx
+    mov ebx, [ss:(4 + esp)]                      ; 描述符类型
+    and ebx, 0x0000000f                          ; 清除其他位
+    shl ebx, 8                                   ; ebx(0 - 3) -> edx(8 - 11)
+    or edx, ebx
+
+    pop ecx
+    pop ebx
+
+    retf
+
+
+
+; void FreeMemory(uint16:cx:selector);
+; in: ds: selector
+; ret: ds: NUL_SEL
+
+FreeMemory:
+
+    pushad
+
+    mov cx, ds
+    push cx                                      ; 选择子
+
+    TREE_ABSCALL GET_GDT_DESCRIPTOR              ; 界限
+    TREE_ABSCALL GET_DES_PROPERTY
+    push ecx
+
+    test edx, 0x00800000
+    jz .littlesize0
+                                                 ; 相对基地址
+    sub eax, (TREE_AVL_MEM - TREE_MEM_PAGED) * 1024
+    mov ecx, 0x1000
+    jmp near .calculate1
+.littlesize0:
+    sub eax, TREE_MEM_FIXED * 1024
+    mov ecx, TREE_MEM_MIN
+
+.calculate1:                                     ; 位(相对)
+    push edx
+    xor edx, edx
+    div ecx
+    pop edx
+
+    mov cx, BITS_SEL                             ; 定位到位图
+    mov ds, cx
+
+    pop ecx                                      ; 位图清零
+    inc ecx                                      ; 段界限 +1
+
+    test edx, 0x00800000
+    jz .littlesize1                              ; 大粒度位图, 界限即位数
+    add eax, TREE_MEM_FIXED / 4 + (TREE_AVL_MEM - \
+        TREE_MEM_PAGED - TREE_MEM_FIXED) * 1024 / TREE_MEM_MIN
+    jmp near .j0
+.littlesize1:                                    ; 小粒度位图
+    add eax, TREE_MEM_FIXED / 4
+    push eax                                     ; 小粒度下, 重新计算位数
+    mov eax, ecx
+    mov ecx, TREE_MEM_MIN                        ; 界限 / TREE_MEM_MIN
+    xor edx, edx
+    div ecx
+    mov ecx, eax
+    pop eax
+
+.j0:
+.s0:
+    btr [ds:TREE_MEM_BITS_OFS], eax              ; 清零
+    inc eax
+    loop .s0
+
+    pop cx
+    mov ds, cx
+    TREE_ABSCALL REM_GDT_DESCRIPTOR              ; 取消注册
+
+    popad
+
+    retf
+
+
+; 分页内存管理的知识:
+
+; 1. 32位的段式内存访问
+;    Intel 处理器访问内存的基本策略是分段, 在16位实模式下, 段的起始地址必须对齐在16字节
+; 边界上, 并且段的最大长度是64kb。
+;    进入32位保护模式后, 进一步强化了分段功能, 并提供了保护机制, 此时段可以起始于任何位置
+; (段地址不需左移4位生成物理地址), 段的长度可以扩展到处理器的最大寻址范围边界, 典型的,
+; 早期的32位处理器拥有32根地址线, 所以, 段的长度可以扩展到4GB。
+;    但是, 因为段的长度不定, 所以在分配内存内存时, 可能会发生内存中的空闲区域小于要加载的
+; 段, 或者空闲区域远远大于要加载的段, 在前一种情况下, 需要重新寻找空闲区域, 而后一种情况,
+; 内存会浪费。
+
+; 2. 分页内存访问
+;    为了解决这个问题, 从80386处理器开始, 引入了分页机制。
+;    在处理器中有专门负责分段的段部件, 每个程序或任务都拥有自己的段, 在访问内存时, 使用
+; 段地址加上偏移量, 段部件就会输出一个32位线性地址。
+;    一旦决定采用页式内存管理, 就应把4GB 的内存分成大小相同的页, 页的最小单位是4kb, 用
+; 十六进制表示就是0x1000, 使用4kb 的页, 可以把4GB 的内存划分为1048576 个页。
+;    很显然, 一个页的物理地址, 其低12位全为零。
+;    需要注意的是, 即使开启了页式内存管理的功能, 分段机制依然是起作用的, 段部件也依然工作。
+;    在分页模式下, 操作系统可以创建一个为所有任务共用的4GB 虚拟地址空间, 也可以位每个任务
+; 创建独立的4GB 虚拟内存空间, 只要所有使用的虚拟页映射到具体的物理内存就行了。
+;    线性地址区间和页的对应关系可以是任意的。
+
+; 3. 页映射表
+;    现在从段部件输出的是线性地址, 或者叫虚拟地址, 为了根据线性地址找到页的物理地址, 操作
+; 系统必须维护一张表, 把线性地址转换为物理地址, 这是一个反过程。
+;    这样的表叫做页表, 它的每一项对应一个页在物理内存空间的起始地址, 若4GB 的虚拟空间使用
+; 一个页表, 那么这个表也一共有1048576 个表项, 每个表项占4字节。
+;    使用页表进行线性地址转换时, 使用线性地址的高20位指定一个物理页, 低12位用于页内偏移。
+;    因此, 从虚拟空间的角度看, 页表是线性的, 从物理空间的角度看, 页表是离散的。
+;    基于以上特点, 每个任务都应拥有自己的页映射表, 以充分发挥页式内存管理的潜力。
+
+; 4. 层次化分页结构
+;    这造成了新的问题, 由于一份4GB 内存的页表包括1048573 个表项, 每个表项占4个字节,
+; 所以一个这样的页表的大小是4MB, 没错, 这张表很大, 要占用相当一部分内存空间, 考虑到实
+; 际上, 没有哪个任务会用到所有的表项, 所以这样做无疑很浪费。
+;    为了解决这个问题, 处理器设计了层次化的分页结构。
+;    层次化分页结构的核心思想是不采用单一的页映射表, 取而代之的是页目录表和页表, 我们可以
+; 创建1024个页表, 每个页表包括1024个页, 这样每个页表的大小正好是一个标准页的长度。
+;    然后创建一个额外的页表, 即页目录表, 来管理这些页表, 这样, 就实现了4MB 的页映射表
+; 的离散, 和实现了动态。
+;    我们在将线性地址转换为物理地址的时候, 使用最高10位访问页目录表, 使用次高10位访问页表,
+; 低12位依然是页内偏移。
+
+; 5. 页目录基址寄存器(Page Directory Base Register, PDBR)
+;    层次化分页结构是每个任务都有的, 在处理器内部, 有一个控制寄存器CR3, 存放着当前任务
+; 页目录的物理地址, 所以被称作页目录基址寄存器。
+;
+
+
+TREE_SPIN_LOCK _alloc_lock
+
+TREE_END:

@@ -1,0 +1,435 @@
+; tree/kernel/linker.s0
+; Author: hyan23
+; Date: 2016.05.06
+;
+
+; [TREE]动态链接器
+
+%include "../boot/args.ic"
+%include "../boot/gdt.ic"
+%include "../boot/LIB.ic"
+%include "../boot/absc.ic"
+%include "../kernel/private.ic"
+%include "../kernel/xfile.ic"
+%include "../inc/nasm/nasm.ic"
+%include "../inc/nasm/spin.ic"
+%include "../inc/nasm/io/def0.ic"
+
+
+; header
+_TREE_LEN DD TREE_END
+
+; constant
+    THIS_SEL        EQU     LINKER_SEL
+    THIS_SEL0       EQU     LINKER_SEL0
+
+; export
+TREE_ABSSYM TREE_XENV_LINK, tree_xenv_link, THIS_SEL
+TREE_ABSSYM TREE_XENV_ERR, tree_xenv_err, THIS_SEL
+
+[BITS 32]
+
+
+tree_xenv_link:
+
+    push ecx
+    push edx
+    push esi
+    push edi
+    push ds
+    push es
+
+    TREE_LOCATE_PROC                             ; 定位到进程空间
+
+    call near CENSOR_LIBS                        ; 检查依赖项(库)
+    test eax, TREE_LOGICAL_TRUE
+    jz .libmissing
+
+    mov ax, LIB_SEL                              ; 定位到符号表
+    mov es, ax
+    mov ax, [es:TREE_LIB_SYMBOLTAB_OFS]
+    mov es, ax
+
+    mov esi, TREE_PROC_FRONT_PART - 1
+    add esi, [ds:ACCESS_SRC(12 + TREE_XFILE_TAB_OFS)] ; 导入表(符号)偏移
+    mov cx, [ds:ACCESS_SRC(16 + TREE_XFILE_TAB_OFS)] ; 导入表条目数
+    jcxz .ok                                     ; 空表
+
+    and ecx, 0x0000ffff
+.s0:                                             ; 遍历符号表, 链接所有条目
+    push ecx
+
+; 0xb078
+    call near FIND_IN_SYMBOL_TAB                 ; 在符号表查找
+    cmp eax, FIT_NOT_FOUND
+    jz .symbolmissing                            ; 没有找到这条记录
+
+    mov ecx, TREE_SYMBOL_TAB_LEN                 ; 根据索引计算符号表里偏移
+    mul ecx
+    mov edi, eax
+
+    mov eax, [es:(TREE_STB_OFS_OFS + edi)]       ; 符号偏移地址
+    mov [ds:(TREE_XPT_NAME_LEN + esi)], eax
+    mov ax, [es:(4 + TREE_STB_OFS_OFS + edi)]    ; 符号段选择子
+    mov [ds:(4 + TREE_XPT_NAME_LEN + esi)], ax
+
+    push ds                                      ; 进程空间选择子
+    mov cx, [es:(TREE_STB_PID_OFS + edi)]
+    TREE_LOCATE_PROC
+    mov ax, ds
+    pop ds
+    mov [ds:(6 + TREE_XPT_NAME_LEN + esi)], ax
+
+    add esi, TREE_IPT_ITEM_LEN                   ; 链接下一条目
+    pop ecx
+    loop .s0
+
+.ok:
+                                                 ; 填写:
+    mov ax, [ds:(0 + TREE_PROC_SEL_OFS)]         ; 代码段选择子
+    mov [ds:ACCESS_SRC(4 + TREE_XFILE_ENTRY_OFS)], ax
+    mov ax, [ds:(2 + TREE_PROC_SEL_OFS)]         ; 数据段选择子
+    mov [ds:ACCESS_SRC(TREE_XFILE_DATA_OFS - 2)], ax
+
+    mov eax, TREE_LOGICAL_TRUE
+
+.fin:
+    pop es
+    pop ds
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+
+    retf
+
+
+%macro STRLEN 1                                  ; 求字符串长度
+                                                 ; 不包括 EOS
+        push esi
+        xor cx, cx
+.%1.s0:
+        mov cl, [ds:esi]
+        jcxz .%1.ok
+        inc esi
+        jmp near .%1.s0
+.%1.ok:
+        mov ecx, esi                             ; ecx:len
+        sub ecx, [ss:esp]
+        pop esi
+
+%endmacro ; STRLEN
+
+
+.libmissing:
+    mov ax, THIS_SEL0
+    mov ds, ax
+    mov es, ax
+    mov esi, LIBMISSING                          ; LIBMISSING > lnerror
+    mov edi, lnerror
+    STRLEN LIBMISSING
+    TREE_ABSCALL MEMCPY
+    add edi, ecx
+    mov esi, missing                             ; missing >> lnerror
+    mov ecx, TREE_IPT_NAME_LEN
+    TREE_ABSCALL MEMCPY
+
+    mov eax, TREE_LOGICAL_FALSE
+    jmp near .fin
+
+.symbolmissing:
+    pop ecx                                      ; 弹出垃圾数据
+    push esi
+    push ds
+
+    mov ax, THIS_SEL0
+    mov ds, ax
+    mov es, ax
+    mov esi, SYMBOLMISSING                       ; SYMBOLMISSING > lnerror
+    mov edi, lnerror
+    STRLEN SYMBOLMISSING
+    TREE_ABSCALL MEMCPY
+    add edi, ecx
+
+    pop ds                                       ; ds:esi >> lnerror
+    pop esi
+
+    mov ecx, TREE_IPT_NAME_LEN
+    TREE_ABSCALL MEMCPY
+
+    mov eax, TREE_LOGICAL_FALSE
+    jmp near .fin
+
+
+
+tree_xenv_err:                                   ; 不推荐使用
+
+    pushad
+    push ds
+    push es
+
+    mov ax, ds
+    mov es, ax
+    mov ax, THIS_SEL0
+    mov ds, ax
+    mov esi, lnerror
+    mov edi, ebx
+    mov ecx, LINK_ERR_LEN
+
+    TREE_ABSCALL MEMCPY                          ; 拷贝错误信息
+
+    pop es
+    pop ds
+    popad
+
+    retf
+
+
+
+;    CENSOR_LIBS
+; 在动态链接之前, 先检查程序所需运行时库是否已经加载,
+; 并把依赖项填写到进程控制块, 同时更新进程表引用计数
+; in, ds: 进程空间, ret: eax: 1: 成功, 0: 失败
+; 如果检查未通过, 可以访问 missing 查询所缺库
+
+CENSOR_LIBS:
+
+    push ecx
+    push edx
+    push esi
+    push edi
+    push ds
+    push es
+
+    mov ax, LIB_SEL                              ; 定位到进程表
+    mov es, ax
+    mov ax, [es:TREE_LIB_PROCTAB_OFS]
+    mov es, ax
+                                                 ; 源文件的:
+    mov cx, [ds:ACCESS_SRC(4 + TREE_XFILE_TAB_OFS)] ; 导入表条目数
+    jcxz .ok                                     ; 空表
+    cmp cx, TREE_PROC_DEPEND_SIZE / 2
+    ja .toomany                                  ; 失败, 数量越过限制
+
+    xor eax, eax                                 ; 依赖项计数
+    and ecx, 0x0000ffff
+    mov esi, TREE_PROC_FRONT_PART - 1
+    add esi, [ds:ACCESS_SRC(TREE_XFILE_TAB_OFS)] ; 导入表偏移地址
+.s0:                                             ; 遍历导入表, 检查所有项
+    push eax
+    push ecx
+
+    call near FIND_IN_PROC_TAB                   ; 在进程表查找
+    cmp eax, FIT_NOT_FOUND
+    jz .notfound                                 ; 没有找到这条记录
+
+; 找到, 填写进程依赖项 pid 到进程控制块, 全部检查通过后,
+; 再更新进程表引用计数, 否则, 可以直接丢弃
+    push esi
+
+    mov ecx, TREE_PROC_TAB_LEN                   ; 进程依赖项pid
+    mul ecx
+    add eax, TREE_PTB_PID_OFS
+    mov edi, eax
+    mov cx, [es:edi]
+
+    mov esi, [ss:(8 + esp)]                      ; 填写
+    shl esi, 1                                   ; esi*=2
+    mov [ds:(TREE_PROC_DEPEND_OFS + esi)], cx
+
+    pop esi
+    pop ecx
+    pop eax
+
+    inc eax
+    add esi, TREE_IPT_ITEM_LEN                   ; 检查下一条目
+    loop .s0
+
+.ok:
+    xor esi, esi                                 ; 更新进程表引用计数
+    mov ecx, TREE_PROC_DEPEND_SIZE / 2           ; 初始化循环
+
+    xor eax, eax
+.update:
+    push ecx
+    mov ax, [ds:(TREE_PROC_DEPEND_OFS + esi)]    ; 依赖项 pid
+    cmp ax, TREE_INVALID_PID
+    jz .fin0
+
+    dec eax                                      ; TREE_PROC_TAB_LEN * (pid - 1)
+    mov ecx, TREE_PROC_TAB_LEN
+    mul ecx
+    add eax, TREE_PTB_DEP_OFS                    ; 定位到引用计数
+    mov edi, eax
+
+    TREE_SYNC_BEGIN THIS_SEL0, censor_libs_lock
+
+    mov cl, [es:edi]                             ; dependent ++
+    inc cl
+    mov [es:edi], cl
+
+    TREE_SYNC_END THIS_SEL0, censor_libs_lock
+
+.next:
+    inc esi
+    inc esi
+    pop ecx
+    loop .update
+
+.fin0:
+    pop ecx
+    mov eax, TREE_LOGICAL_TRUE                   ; 检查通过
+
+.fin:
+    pop es
+    pop ds
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+
+    ret
+
+
+.notfound:
+    pop ecx                                      ; 弹出垃圾数据
+    pop eax
+
+    mov ax, THIS_SEL0                            ; 运行库缺失
+    mov es, ax                                   ; ds:esi > missing
+    mov edi, missing
+    mov ecx, TREE_IPT_NAME_LEN
+    TREE_ABSCALL MEMCPY
+
+    mov eax, TREE_LOGICAL_FALSE                  ; 检查不通过
+    jmp near .fin
+
+.toomany:
+    mov ax, THIS_SEL0                            ; 导入项过多
+    mov ds, ax
+    mov es, ax
+    mov esi, LIB2MANY                            ; LIB2MANY > missing
+    mov edi, missing
+    mov ecx, TREE_IPT_NAME_LEN
+    TREE_ABSCALL MEMCPY
+
+    mov eax, TREE_LOGICAL_FALSE                  ; 检查不通过
+    jmp near .fin
+
+
+;
+; 这个宏适用于如下类型的表:
+;
+; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;                      [%2]                         |
+; ---------------------------------------------     |
+; [%5] to skip | pre: [%3]|len: [%4]| the rests|    |
+; ---------------------------------------------     |
+;       0      |   ....   |   this  |   ....   |    |
+; ---------------------------------------------     |
+;       0      |   ....   |    is   |   ....   |    |
+; ---------------------------------------------     |
+;   1 (skip)  |   ....   |   the   |   ....   |[%1]|
+; ---------------------------------------------     |
+;   0 (if)    |   ....   |  aimed  |   ....   |    |
+; ---------------------------------------------     |
+;   0 (%5 = 1)|   ....   |  field  |   ....   |    |
+; ---------------------------------------------     |
+;    ..................                        |    |
+; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+; constant
+    FIT_NOT_FOUND            EQU            -1
+
+; [ds:esi]:src, es:tab, returns to eax
+
+
+%macro FIND_IN_TAB 5
+
+        push ecx
+        push esi
+        push edi
+
+        mov ecx, %1                              ; 表的大小
+        xor eax, eax                             ; 计数, 返回索引
+        mov edi, %3                              ; 起始偏移(目标字段)
+
+.s0:                                             ; 遍历表
+        push ecx                                 ; 增量: -1
+        push esi                                 ; 增量: 0
+        push edi                                 ; 增量: +%2
+
+        sub edi, %3                              ; 跳过被标记记录
+        mov cx, [es:edi]
+        cmp cx, %5
+        jz .next
+
+        mov edi, [ss:esp]
+
+        cld                                      ; 字节正向比较
+        mov ecx, %4                              ; 目标字段长度
+        repz cmpsb                               ; 相等则重复
+        jcxz .found                              ; 找到
+
+.next:
+        pop edi
+        pop esi
+        pop ecx
+
+        inc eax                                  ; 更新索引
+        add edi, %2                              ; 访问下一条目
+        loop .s0
+
+.notfound:                                       ; 遍历结束, 没有找到匹配
+        mov eax, FIT_NOT_FOUND
+        jmp near .fin
+
+.found:
+        pop edi
+        pop esi
+        pop ecx
+
+.fin:
+        pop edi
+        pop esi
+        pop ecx
+
+%endmacro ; FIND_IN_TAB
+
+
+; FIND_IN_PROC_TAB
+; in: ds:esi: 进程名称, es: 进程表所在段
+; ret: eax: 找到, 返回索引, eax: 未找到, 返回 -1
+
+FIND_IN_PROC_TAB:
+
+    FIND_IN_TAB TREE_PROC_LI, TREE_PROC_TAB_LEN, TREE_PTB_NAME_OFS, \
+        TREE_IPT_NAME_LEN, TREE_INVALID_PID
+
+    ret
+
+
+; FIND_IN_SYMBOL_TAB
+; in: ds:esi: 符号名, es: 符号表所在段
+; ret: eax: 找到, 返回索引, eax: 未找到, 返回 -1
+
+FIND_IN_SYMBOL_TAB:
+
+    FIND_IN_TAB TREE_SYMBOL_LI, TREE_SYMBOL_TAB_LEN, TREE_STB_NAME_OFS, \
+        TREE_IPT_NAME_LEN, TREE_INVALID_PID
+
+    ret
+
+
+; 数据
+
+    LIB2MANY DB 'TOO MANY IPTS:(', PCHAR_EOS     ; IPT_NAME_LEN
+    LIBMISSING DB 'lib below is missing:\n', PCHAR_EOS
+    SYMBOLMISSING DB 'symbol below is missing:\n', PCHAR_EOS
+
+    missing    TIMES TREE_IPT_NAME_LEN DB PCHAR_EOS
+    lnerror    TIMES LINK_ERR_LEN DB PCHAR_EOS
+
+    TREE_SPIN_LOCK censor_libs_lock
+
+TREE_END:

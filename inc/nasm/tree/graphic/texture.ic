@@ -1,0 +1,44 @@
+﻿; tree/inc/nasm/tree/graphic/texture.ic
+; Author: hyan23
+; Date: 2016.08.07
+;
+
+%ifndef _TEXTURE_IC_
+%define _TEXTURE_IC_
+
+; uint16:ax:structure
+;    NewTexture(dx:ax:width:height:param);
+    __TREE_IMPORT @texture0, 'NewTexture', NewTexture
+
+; void DestroyTexture(uint16*:ds:structure);
+    __TREE_IMPORT @texture1, 'DestroyTexture', DestroyTexture
+
+; uint16:ax GetDrawable(uint16*:ds:structure);
+    __TREE_IMPORT @texture2, 'GetDrawable', GetDrawable
+
+; void PrintTexture(uint16:ax:structure, uint8:cl:color);
+    __TREE_IMPORT @texture3, 'PrintTexture', PrintTexture
+
+; 不建议使用
+; void DrawPixel(uint16*ds:structure,
+;    uint16:dx:ax:position, uint8:cl:color);
+    __TREE_IMPORT @texture4, 'DrawPixel', DrawPixel
+
+; void DrawLine(uint16*:ds:structure,
+;    uint16:dx:ax:position, uint16:(ebx16-31):length,
+;    uint16:bx:breadth, uint8:ch:style, uint8:cl:color);
+    __TREE_IMPORT @texture5, 'DrawLine', DrawLine
+
+; void DrawRect(uint16*:ds:structure,
+;    uint16:dx:ax:position, uint16:(ebx16-31):width,
+;    uint16:bx:height, uint8:cl:color);
+    __TREE_IMPORT @texture6, 'DrawRect', DrawRect
+
+; void BlitTexture(ds:src, es:dst,
+;    int16:dx:ax:x:y:param);
+    __TREE_IMPORT @texture7, 'BlitTexture', BlitTexture
+
+
+
+
+%endif ; _TEXTURE_IC_

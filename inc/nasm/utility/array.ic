@@ -1,0 +1,33 @@
+; tree/inc/nasm/utility/array.ic
+; Author: hyan23
+; Date: 2016.08.01
+;
+
+; utility/array
+
+%ifndef _ARRAY_IC_
+%define _ARRAY_IC_
+
+
+; uint16:ax:array ArrayCreate(uint32:eax:capacity);
+    __TREE_IMPORT @array0, 'ArrayCreate', ArrayCreate
+
+; void ArrayDestroy(ds:array);
+    __TREE_IMPORT @array1, 'ArrayDestroy', ArrayDestroy
+
+; uint32:eax ArrayGetCapacity(ds:array);
+    __TREE_IMPORT @array2, 'ArrayGetCapacity', ArrayGetCapacity
+
+; bool:eax ArrayResize(ds:array, uint32:eax:size);
+    __TREE_IMPORT @array3, 'ArrayResize', ArrayResize
+
+; uint32:eax ArrayGet(ds:array, uint32:ecx:index);
+    __TREE_IMPORT @array4, 'ArrayGet', ArrayGet
+
+; bool:eax ArraySet(ds:array, uint32:eax:_E,
+;   uint32:ecx:index);
+    __TREE_IMPORT @array5, 'ArraySet', ArraySet
+
+
+
+%endif ; _ARRAY_IC_

@@ -1,0 +1,60 @@
+; tree/kernel/gate.ic
+; Author: hyan23
+; Date: 2016.06.17
+;
+
+%ifndef _GATE_IC_
+%define _GATE_IC_
+
+; 在这里分配调用门号。
+
+; built
+    __READ_SECTOR           EQU         0
+    __READ_BLOCK            EQU         1
+
+
+    __PUT_CHAR              EQU         2
+    __PUT_STR               EQU         3
+    __SET_COLOR             EQU         10
+    __CLR_ROW               EQU         11
+    __CLR_SCR               EQU         12
+    __GOTO_XY               EQU         13
+
+
+    __TREE_EXECUTE          EQU         4
+    __TREE_TERMINATE        EQU         5
+
+
+    __MEMCPY                EQU         6
+    __ZEROMEMORY            EQU         14    ; new
+    __ALLOC_MEMORY0         EQU         7
+    __FREE_MEMORY           EQU         8
+
+
+    __GET_DES_PROPERTY      EQU         9
+
+
+
+; task0
+    __CREATE_PROCESS        EQU         104
+    __GET_TICK_COUNT        EQU         109
+    __GET_TASK_PID          EQU         110 ; new
+
+; kbd0
+
+    __GET_CHAR              EQU         100
+    __QCHAR_CLEAR           EQU         101
+    __QCHAR_EMPTY           EQU         102
+    __CAPSLOCKED            EQU         103
+
+; mouse0
+
+    __GET_MOUSE_XY          EQU         106
+    __GET_CURSOR_XY         EQU         107
+    __GET_MOUSE_BTN         EQU         108
+
+; graphic
+    __REFRESH_SCR           EQU         105
+
+
+%endif ; _GATE_IC_
