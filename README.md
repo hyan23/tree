@@ -11,12 +11,11 @@ A Multi-tasking, GUI Operating System
 事实上你不需要自己编译这些文件, 打开项目文件夹/TREE, 双击TREE.vbox即可,<br/>
 前提是你的电脑已经安装好最新版本的VirtualBox软件。
 
--
 ## 待办
-1. LDT
-２. 进程的堆
 
--
+1. LDT
+2. 进程的堆
+
 ## 以下是笔记
 
 ### 异常中断
