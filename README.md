@@ -1,15 +1,15 @@
 # tree
-A Multi-tasking, GUI Operating System
+A toy multi-tasking, GUI Operating System
 
 ## 如何编译
 
-这个项目暂时只能在Windows平台编译, 不过稍作修改在你也能在Linux编译它,<br/>
-要编译, 打开项目文件夹/make, 运行make.cmd即可。
+这个项目暂时只能在 Windows 平台编译, 不过稍作修改在你也能在 Linux 编译它,<br/>
+要编译, 打开项目文件夹 /make, 运行 make.cmd 即可。
 
 ## 如何运行
 
-事实上你不需要自己编译这些文件, 打开项目文件夹/TREE, 双击TREE.vbox即可,<br/>
-前提是你的电脑已经安装好最新版本的VirtualBox软件。
+事实上你不需要自己编译这些文件, 打开项目文件夹 /TREE, 双击 TREE.vbox 即可,<br/>
+前提是你的电脑已经安装好最新版本的 VirtualBox 软件。
 
 ## 待办
 
@@ -25,9 +25,9 @@ A Multi-tasking, GUI Operating System
 1. 已分配的内存(链接表)
 2. 窗口句柄(字)
 
-在loader.ss创建这两个数据结构,<br/>
-在agent.ss维护这两个数据结构,<br/>
-在task0.ss销毁这两个数据结构。
+在 loader.ss 创建这两个数据结构,<br/>
+在 agent.ss 维护这两个数据结构,<br/>
+在 task0.ss 销毁这两个数据结构。
 
 ### 如何处理
 
